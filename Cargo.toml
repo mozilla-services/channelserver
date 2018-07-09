@@ -1,2 +1,2 @@
 [workspace]
-members = ["linkserver", "spake2_demo"]
+members = ["linkserver", "chatserver", "spake2_demo"]

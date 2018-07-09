@@ -1,0 +1,28 @@
+[package]
+name = "chatserver"
+version = "0.1.0"
+authors = ["jr conlin<me+src@jrconlin.com"]
+
+[dependencies]
+rand = "*"
+bytes = "0.4"
+byteorder = "1.1"
+futures = "0.1"
+tokio-io = "0.1"
+tokio-core = "0.1"
+env_logger = "*"
+
+serde = "1.0"
+serde_json = "1.0"
+uuid = { version = "0.6.5", features = ["serde", "v4"] }
+
+slog = "2.2.3"
+slog-async = "2.3.0"
+slog-json = "2.2.0"
+slog-scope = "4.0.1"
+slog-stdlog = "3.0.2"
+slog-term = "2.4.0"
+serde_derive = "1.0.69"
+
+actix = "0.5"
+actix-web = "^0.6"
