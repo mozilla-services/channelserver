@@ -9,6 +9,11 @@ on top of the message pipes provided by [linkserver](../linkserver/).
 It uses [spake2.rs](https://github.com/warner/spake2.rs) for the crypto bits,
 compiled for the web via `cargo web`.  To run it, you will need to:
 
+0. Install the cargo web extension, if not already installed.
+```
+#> cargo install -f cargo-web
+```
+
 1. Build and run linkserver:
 
 ```
