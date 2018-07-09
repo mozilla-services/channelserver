@@ -11,5 +11,8 @@ matrix:
 
 cache: cargo
 
+script:
+    - cargo build --all --exclude=pairsona_spake2
+
 notifications:
   email: false
