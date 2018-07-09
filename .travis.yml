@@ -2,7 +2,12 @@ language: rust
 
 rust:
     - stable
-    - nightly-2018-07-08
+    - nightly
+
+matrix:
+   allow_failures:
+       - rust: nightly
+   fast_finish: true
 
 cache: cargo
 
