@@ -13,6 +13,7 @@ use actix::{
     Handler, Running, StreamHandler, Syn, WrapFuture,
 };
 use actix_web::server::HttpServer;
+use actix_web::middleware::cors::Cors;
 use actix_web::{
     error, fs, http, ws, App, AsyncResponder, Error, HttpRequest, HttpResponse, Path, Responder,
     State,
@@ -146,12 +147,16 @@ fn main() {
         };
 
         App::with_state(state)
-            // HTTP message resource
-            .resource(
-                "/v1/send/{clientid}", |r| {
-                    r.method(http::Method::PUT)
-                        .with(message_post)
-                })
+            // HTTP message resource, with CORS
+            .configure(|app| {
+                Cors::for_app(app)
+                    .resource(
+                        "/v1/send/{clientid}", |r| {
+                            r.method(http::Method::PUT)
+                                .with(message_post)
+                    })
+                    .register()
+            })
             // websocket
             .resource("/ws/", |r| r.route().f(message_route))
             // static resources
