@@ -2,8 +2,12 @@ language: rust
 
 rust:
     - stable
+    - nightly-2018-07-08
 
 cache: cargo
+
+script:
+    - cargo build --all --exclude=pairsona_spake2
 
 notifications:
   email: false
