@@ -73,7 +73,8 @@ impl Handler<Disconnect> for MessageRouter {
     type Result = ();
 
     fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
-        let client_exists = self.clients
+        let client_exists = self
+            .clients
             .get(&msg.id.0)
             .map_or(false, |client| client.1 == msg.id.1);
         if client_exists {

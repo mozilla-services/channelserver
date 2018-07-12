@@ -1,2 +1,4 @@
-target
+.idea/
+.vscode/
+target/
 spake2_demo/target

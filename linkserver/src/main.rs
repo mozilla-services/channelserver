@@ -203,7 +203,8 @@ mod tests {
 
         // Send in a test web request
         let path = format!("/v1/send/{}", &uuid);
-        let request = srv.client(http::Method::PUT, &path)
+        let request = srv
+            .client(http::Method::PUT, &path)
             .body("hello client")
             .unwrap();
         let response = srv.execute(request.send()).unwrap();
