@@ -4,6 +4,8 @@ version = "0.1.0"
 authors = ["jr conlin<me+src@jrconlin.com"]
 
 [dependencies]
+config = "0.9.0"
+failure = "0.1.1"
 rand = "*"
 bytes = "0.4"
 byteorder = "1.1"

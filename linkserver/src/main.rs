@@ -12,8 +12,8 @@ use actix::{
     fut, Actor, ActorContext, ActorFuture, Addr, Arbiter, AsyncContext, ContextFutureSpawner,
     Handler, Running, StreamHandler, Syn, WrapFuture,
 };
-use actix_web::server::HttpServer;
 use actix_web::middleware::cors::Cors;
+use actix_web::server::HttpServer;
 use actix_web::{
     error, fs, http, ws, App, AsyncResponder, Error, HttpRequest, HttpResponse, Path, Responder,
     State,

@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display, Formatter, Result};
 
-use actix::prelude::{Actor, Context, Handler};
+use actix::prelude::{Actor, Context, Handler, Message};
 
 use slog;
 use slog::Drain;

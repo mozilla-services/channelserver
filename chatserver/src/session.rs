@@ -12,12 +12,12 @@ use server;
 
 /// This is our websocket route state, this state is shared with all route
 /// instances via `HttpContext::state()`
-pub struct WsChatSessionState {
-    pub addr: Addr<Syn, server::ChatServer>,
+pub struct WsChannelSessionState {
+    pub addr: Addr<Syn, server::ChannelServer>,
     pub log: Addr<Syn, logging::MozLogger>,
 }
 
-pub struct WsChatSession {
+pub struct WsChannelSession {
     /// unique session id
     pub id: usize,
     /// Client must send ping at least once per 10 seconds, otherwise we drop
@@ -29,8 +29,8 @@ pub struct WsChatSession {
     pub name: Option<String>,
 }
 
-impl Actor for WsChatSession {
-    type Context = ws::WebsocketContext<Self, WsChatSessionState>;
+impl Actor for WsChannelSession {
+    type Context = ws::WebsocketContext<Self, WsChannelSessionState>;
 
     /// Method is called on actor start.
     /// We register ws session with ChatServer
@@ -50,7 +50,13 @@ impl Actor for WsChatSession {
             .into_actor(self)
             .then(|res, act, ctx| {
                 match res {
-                    Ok(res) => act.id = res,
+                    Ok(res) => {
+                        ctx.state().log.do_send(logging::LogMessage {
+                            level: logging::ErrorLevel::Info,
+                            msg: format!("Starting new session {}", res),
+                        });
+                        act.id = res;
+                    }
                     // something is wrong with chat server
                     Err(err) => {
                         ctx.state().log.do_send(logging::LogMessage {
@@ -67,6 +73,11 @@ impl Actor for WsChatSession {
 
     fn stopping(&mut self, ctx: &mut Self::Context) -> Running {
         // notify chat server
+
+        ctx.state().log.do_send(logging::LogMessage {
+            level: logging::ErrorLevel::Info,
+            msg: format!("Killing session {:?}", self.id),
+        });
         ctx.state().addr.do_send(server::Disconnect {
             channel: self.channel.clone(),
             id: self.id,
@@ -76,16 +87,24 @@ impl Actor for WsChatSession {
 }
 
 /// Handle messages from chat server, we simply send it to peer websocket
-impl Handler<server::TextMessage> for WsChatSession {
+impl Handler<server::TextMessage> for WsChannelSession {
     type Result = ();
 
     fn handle(&mut self, msg: server::TextMessage, ctx: &mut Self::Context) {
-        ctx.text(msg.0);
+        if msg.0 == "\04" {
+            ctx.state().log.do_send(logging::LogMessage {
+                level: logging::ErrorLevel::Info,
+                msg: format!("Close recv'd for session {:?}", self.id),
+            });
+            ctx.close(None);
+        } else {
+            ctx.text(msg.0);
+        }
     }
 }
 
 /// WebSocket message handler
-impl StreamHandler<ws::Message, ws::ProtocolError> for WsChatSession {
+impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
         ctx.state().log.do_send(logging::LogMessage {
             level: logging::ErrorLevel::Info,
