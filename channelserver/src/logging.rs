@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display, Formatter, Result};
 
-use actix::prelude::{Actor, Context, Handler, Message};
+use actix::prelude::{Actor, Context, Handler};
 
 use slog;
 use slog::Drain;
@@ -12,6 +12,7 @@ pub struct MozLogger {
     pub log: slog::Logger,
 }
 
+#[allow(dead_code)]
 pub enum ErrorLevel {
     Debug,
     Info,

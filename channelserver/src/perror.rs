@@ -1,11 +1,14 @@
 use std::fmt;
-use std::result;
 
-use failure::{Backtrace, Context, Error, Fail};
+use failure::{Backtrace, Context, Fail};
 
+/*
+#[allow(dead_code)]
 pub type Result<T> = result::Result<T, Error>;
 
+#[allow(dead_code)]
 pub type HandlerResult<T> = result::Result<T, HandlerError>;
+*/
 
 #[derive(Debug)]
 pub struct HandlerError {
@@ -22,11 +25,14 @@ pub enum HandlerErrorKind {
     ExpiredErr,
 }
 
+/*
+#[allow(dead_code)]
 impl HandlerError {
     pub fn kind(&self) -> &HandlerErrorKind {
         self.inner.get_context()
     }
 }
+*/
 
 impl Fail for HandlerError {
     fn cause(&self) -> Option<&Fail> {

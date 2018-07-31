@@ -1,5 +1,5 @@
 [package]
-name = "chatserver"
+name = "channelserver"
 version = "0.1.0"
 authors = ["jr conlin<me+src@jrconlin.com"]
 
