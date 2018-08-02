@@ -10,7 +10,7 @@ extern crate uuid;
 
 use actix::{
     fut, Actor, ActorContext, ActorFuture, Addr, Arbiter, AsyncContext, ContextFutureSpawner,
-    Handler, Running, StreamHandler, Syn, WrapFuture,
+    Handler, Running, StreamHandler,  WrapFuture,
 };
 use actix_web::middleware::cors::Cors;
 use actix_web::server::HttpServer;
@@ -29,12 +29,12 @@ use session::ClientSession;
 /// This is our websocket route state, this state is shared with all route
 /// instances via `HttpContext::state()`
 pub struct WsChatSessionState {
-    addr: Addr<Syn, server::MessageRouter>,
+    addr: Addr<server::MessageRouter>,
 }
 
 /// Entry point for our route
-fn message_route(req: HttpRequest<WsChatSessionState>) -> Result<HttpResponse, Error> {
-    ws::start(req, ClientSession { id: None })
+fn message_route(req: &HttpRequest<WsChatSessionState>) -> Result<HttpResponse, Error> {
+    ws::start(&req, ClientSession { id: None })
 }
 
 /// Client ID from the Path
@@ -105,7 +105,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for ClientSession {
                     return;
                 }
                 if let Ok(id) = Uuid::parse_str(&m) {
-                    let addr: Addr<Syn, _> = ctx.address();
+                    let addr = ctx.address();
                     ctx.state()
                         .addr
                         .send(server::Identify { id, addr: addr })
@@ -137,7 +137,7 @@ fn main() {
     let sys = actix::System::new("linkserver");
 
     // Start message router actor in separate thread
-    let server: Addr<Syn, _> = Arbiter::start(|_| server::MessageRouter::default());
+    let server = Arbiter::start(|_| server::MessageRouter::default());
 
     // Create Http server with websocket support
     HttpServer::new(move || {
@@ -160,7 +160,7 @@ fn main() {
             // websocket
             .resource("/ws/", |r| r.route().f(message_route))
             // static resources
-            .handler("/", fs::StaticFiles::new("static/"))
+            .handler("/", fs::StaticFiles::new("static/").unwrap())
     }).bind("127.0.0.1:8080")
         .unwrap()
         .start();
@@ -178,7 +178,7 @@ mod tests {
 
     fn build_srv() -> test::TestServer {
         test::TestServer::build_with_state(|| {
-            let addr: Addr<Syn, _> = Arbiter::start(|_| server::MessageRouter::default());
+            let addr = Arbiter::start(|_| server::MessageRouter::default());
             WsChatSessionState { addr }
         }).start(|app| {
             app.handler(|req| ws::start(req, ClientSession { id: None }));

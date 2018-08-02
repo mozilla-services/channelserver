@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use actix::{
     fut, Actor, ActorContext, ActorFuture, Addr, AsyncContext, ContextFutureSpawner, Handler,
-    Running, StreamHandler, Syn, WrapFuture,
+    Running, StreamHandler, WrapFuture,
 };
 use actix_web::ws;
 use uuid::Uuid;
@@ -13,8 +13,8 @@ use server;
 /// This is our websocket route state, this state is shared with all route
 /// instances via `HttpContext::state()`
 pub struct WsChannelSessionState {
-    pub addr: Addr<Syn, server::ChannelServer>,
-    pub log: Addr<Syn, logging::MozLogger>,
+    pub addr: Addr<server::ChannelServer>,
+    pub log: Addr<logging::MozLogger>,
 }
 
 pub struct WsChannelSession {
@@ -33,27 +33,26 @@ impl Actor for WsChannelSession {
     type Context = ws::WebsocketContext<Self, WsChannelSessionState>;
 
     /// Method is called on actor start.
-    /// We register ws session with ChatServer
+    /// We register ws session with ChannelServer
     fn started(&mut self, ctx: &mut Self::Context) {
         // register self in chat server. `AsyncContext::wait` register
         // future within context, but context waits until this future resolves
         // before processing any other events.
         // HttpContext::state() is instance of WsChatSessionState, state is shared
         // across all routes within application
-        let addr: Addr<Syn, _> = ctx.address();
+        let addr: Addr<Self> = ctx.address();
         ctx.state()
             .addr
             .send(server::Connect {
                 addr: addr.recipient(),
                 channel: self.channel.clone(),
-            })
-            .into_actor(self)
+            }).into_actor(self)
             .then(|res, act, ctx| {
                 match res {
                     Ok(res) => {
                         ctx.state().log.do_send(logging::LogMessage {
-                            level: logging::ErrorLevel::Info,
-                            msg: format!("Starting new session {}", res),
+                            level: logging::ErrorLevel::Debug,
+                            msg: format!("Starting new session [{}]", res),
                         });
                         act.id = res;
                     }
@@ -67,21 +66,23 @@ impl Actor for WsChannelSession {
                     }
                 }
                 fut::ok(())
-            })
-            .wait(ctx);
+            }).wait(ctx);
     }
 
     fn stopping(&mut self, ctx: &mut Self::Context) -> Running {
         // notify chat server
 
         ctx.state().log.do_send(logging::LogMessage {
-            level: logging::ErrorLevel::Info,
-            msg: format!("Killing session {:?}", self.id),
+            level: logging::ErrorLevel::Debug,
+            msg: format!("Killing session [{:?}]", self.id),
         });
-        ctx.state().addr.do_send(server::Disconnect {
+        // Broadcast the close to all attached clients.
+        ctx.state().addr.do_send(server::ClientMessage {
+            id: 0,
+            msg: "\x04".to_owned(),
             channel: self.channel.clone(),
-            id: self.id,
         });
+
         Running::Stop
     }
 }
@@ -91,10 +92,10 @@ impl Handler<server::TextMessage> for WsChannelSession {
     type Result = ();
 
     fn handle(&mut self, msg: server::TextMessage, ctx: &mut Self::Context) {
-        if msg.0 == "\04" {
+        if msg.0 == "\x04" {
             ctx.state().log.do_send(logging::LogMessage {
-                level: logging::ErrorLevel::Info,
-                msg: format!("Close recv'd for session {:?}", self.id),
+                level: logging::ErrorLevel::Debug,
+                msg: format!("Close recv'd for session [{:?}]", self.id),
             });
             ctx.close(None);
         } else {
@@ -107,7 +108,7 @@ impl Handler<server::TextMessage> for WsChannelSession {
 impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
         ctx.state().log.do_send(logging::LogMessage {
-            level: logging::ErrorLevel::Info,
+            level: logging::ErrorLevel::Debug,
             msg: format!("Websocket Message: {:?}", msg),
         });
         match msg {
@@ -129,6 +130,10 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
                 });
             }
             ws::Message::Close(_) => {
+                ctx.state().log.do_send(logging::LogMessage {
+                            level: logging::ErrorLevel::Debug,
+                            msg: format!("Shutting down session [{}].", self.id),
+                        });
                 ctx.stop();
             }
         }

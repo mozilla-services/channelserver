@@ -1,15 +1,20 @@
 language: rust
+sudo: false
+cache: cargo
 
 rust:
     - stable
     - nightly
+
+env:
+    global:
+      - RUST_TEST_THREADS=1
 
 matrix:
     allow_failures:
         - rust: nightly
     fast_finish: true
 
-cache: cargo
 
 script:
     - cargo build --all --exclude=pairsona_spake2
