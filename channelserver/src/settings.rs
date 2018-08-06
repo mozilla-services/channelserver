@@ -27,7 +27,7 @@ impl Settings {
         settings.set_default("max_clients", 2)?;
         settings.set_default("max_data", 0)?;
         settings.set_default("port", 8000)?;
-        settings.set_default("hostname", "localhost".to_owned())?;
+        settings.set_default("hostname", "0.0.0.0".to_owned())?;
         // Get the run environment
         let env = env::var("RUN_MODE").unwrap_or("development".to_owned());
         // start with any local config file.
