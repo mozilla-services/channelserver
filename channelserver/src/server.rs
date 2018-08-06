@@ -62,9 +62,9 @@ pub struct Channel {
 /// session. implementation is super primitive
 pub struct ChannelServer {
     me: usize, // id (to see if threading an issue)
-    //channels: ChannelCollection, // collections of sessions grouped by channel
-    //sessions: SessionCollection, // individual connections
+    // collections of sessions grouped by channel
     channels: HashMap<Uuid, HashMap<usize, Channel>>,
+    // individual connections
     sessions: HashMap<usize, Recipient<TextMessage>>,
     rng: RefCell<ThreadRng>,
     log: MozLogger,
@@ -85,23 +85,6 @@ impl Default for ChannelServer {
     }
 }
 
-/*
-impl ChannelServer {
-    pub fn init(channels:ChannelCollection,
-                sessions:SessionCollection) -> ChannelServer {
-        let me = rand::thread_rng().gen::<usize>();
-        ChannelServer {
-            me: me,
-            channels: channels,
-            sessions: sessions,
-            rng: RefCell::new(rand::thread_rng()),
-            log: MozLogger::default(),
-            settings: RefCell::new(Settings::new().unwrap()),
-        }
-    }
-}
-*/
-
 impl ChannelServer {
     /// Send message to all users in the channel except skip_id
     fn send_message(
@@ -110,7 +93,6 @@ impl ChannelServer {
         message: &str,
         skip_id: usize,
     ) -> Result<(), perror::HandlerError> {
-        //if let Some(participants) = self.channels.lock().unwrap().get_mut(channel) {
         if let Some(participants) = self.channels.get_mut(channel) {
             // show's over, everyone go home.
             if message == "\04" {
@@ -119,7 +101,7 @@ impl ChannelServer {
                         addr.do_send(TextMessage("\04".to_owned())).unwrap_or(());
                     }
                 }
-                return Ok(());
+                return Err(perror::HandlerErrorKind::ShutdownErr.into());
             }
             for party in participants.values_mut() {
                 if party.started.elapsed().as_secs() > self.settings.borrow().timeout {
@@ -128,7 +110,7 @@ impl ChannelServer {
                 }
                 let max_data: usize = self.settings.borrow().max_data as usize;
                 let msg_len = message.len();
-                if max_data > 0 && party.data_exchanged > max_data - msg_len {
+                if max_data > 0 && (party.data_exchanged > max_data || msg_len > max_data) {
                     slog_info!(
                         self.log.log,
                         "Too much data sent through {}, closing",
@@ -137,7 +119,8 @@ impl ChannelServer {
                     return Err(perror::HandlerErrorKind::XSDataErr.into());
                 }
                 party.data_exchanged += msg_len;
-                let msg_count = self.settings.borrow().max_exchanges;
+                let msg_count = u8::from(self.settings.borrow().max_exchanges);
+                party.msg_count += 1;
                 if msg_count > 0 && party.msg_count > msg_count {
                     slog_info!(
                         self.log.log,
@@ -146,11 +129,11 @@ impl ChannelServer {
                     );
                     return Err(perror::HandlerErrorKind::XSMessageErr.into());
                 }
-                party.msg_count += 1;
                 if party.id != skip_id {
                     if let Some(addr) = self.sessions.get(&party.id) {
                         addr.do_send(TextMessage(message.to_owned())).unwrap_or(());
                     }
+                } else {
                 }
             }
         }
@@ -161,7 +144,6 @@ impl ChannelServer {
     ///
     /// This sends a ^D message to each participant, which forces the connection closed.
     fn shutdown(&mut self, channel: &Uuid) {
-        // let mut sessions = self.sessions.lock().unwrap();
         if let Some(participants) = self.channels.get_mut(channel) {
             for (id, info) in participants {
                 if let Some(addr) = self.sessions.get(&id) {
@@ -188,9 +170,6 @@ impl Handler<Connect> for ChannelServer {
     type Result = usize;
 
     fn handle(&mut self, msg: Connect, ctx: &mut Context<Self>) -> Self::Result {
-        // notify all users in same channel
-        // self.send_message(&"Main".to_owned(), "Someone joined", 0);
-
         let id = self.rng.borrow_mut().gen::<usize>();
         let new_chan = Channel {
             // register session with random id
@@ -213,7 +192,6 @@ impl Handler<Connect> for ChannelServer {
         // auto join session to Main channel
         let chan_id = &msg.channel.simple();
         {
-            // let mut channels = self.channels.lock().unwrap();
             if !self.channels.contains_key(&msg.channel) {
                 slog_debug!(
                     self.log.log,
@@ -230,8 +208,7 @@ impl Handler<Connect> for ChannelServer {
                     chan_id
                 )
             }
-            let group = self
-                .channels
+            let group = self.channels
                 .get_mut(&msg.channel)
                 .expect(&format!("Could not get channels for {}", &chan_id));
             group.insert(id.clone(), new_chan);
@@ -271,8 +248,7 @@ impl Handler<ClientMessage> for ChannelServer {
     type Result = ();
 
     fn handle(&mut self, msg: ClientMessage, _: &mut Context<Self>) {
-        if self
-            .send_message(&msg.channel, msg.msg.as_str(), msg.id)
+        if self.send_message(&msg.channel, msg.msg.as_str(), msg.id)
             .is_err()
         {
             self.shutdown(&msg.channel)

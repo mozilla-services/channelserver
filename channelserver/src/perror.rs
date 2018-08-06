@@ -23,6 +23,8 @@ pub enum HandlerErrorKind {
     XSMessageErr,
     #[fail(display = "Connection Expired")]
     ExpiredErr,
+    #[fail(display = "Channel Shutdown Requested")]
+    ShutdownErr,
 }
 
 /*

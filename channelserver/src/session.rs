@@ -46,7 +46,8 @@ impl Actor for WsChannelSession {
             .send(server::Connect {
                 addr: addr.recipient(),
                 channel: self.channel.clone(),
-            }).into_actor(self)
+            })
+            .into_actor(self)
             .then(|res, act, ctx| {
                 match res {
                     Ok(res) => {
@@ -66,7 +67,8 @@ impl Actor for WsChannelSession {
                     }
                 }
                 fut::ok(())
-            }).wait(ctx);
+            })
+            .wait(ctx);
     }
 
     fn stopping(&mut self, ctx: &mut Self::Context) -> Running {
@@ -131,9 +133,9 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
             }
             ws::Message::Close(_) => {
                 ctx.state().log.do_send(logging::LogMessage {
-                            level: logging::ErrorLevel::Debug,
-                            msg: format!("Shutting down session [{}].", self.id),
-                        });
+                    level: logging::ErrorLevel::Debug,
+                    msg: format!("Shutting down session [{}].", self.id),
+                });
                 ctx.stop();
             }
         }

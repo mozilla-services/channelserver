@@ -2,7 +2,7 @@ use std::env;
 
 use config::{Config, ConfigError, Environment, File};
 
-static PREFIX: &str = "PAIR_";
+static PREFIX: &str = "PAIR";
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {

@@ -141,10 +141,10 @@ fn main() {
 
         build_app(App::with_state(state))
     }).bind(&addr)
-    .unwrap()
-    .start();
+        .unwrap()
+        .start();
 
-    slog_info!(logger.log, "Started http server: {}", addr);
+    slog_info!(logger.log, "Started http server: {}\n{:?}", addr, settings);
     let _ = sys.run();
 }
 
@@ -153,7 +153,7 @@ mod test {
     use std::str;
 
     use actix_web::test;
-    use actix_web::ws::{self, WsWriter};
+    use actix_web::ws;
     use actix_web::HttpMessage;
     use futures::Stream;
 
@@ -162,16 +162,29 @@ mod test {
 
     //fn get_server(channels: ChannelCollection, sessions: SessionCollection) -> test::TestServer {
     fn get_server() -> test::TestServer {
-        test::TestServer::with_factory(|| {
-            //let server =Arbiter::start( |_| server::ChannelServer::init(channels, sessions));
+        let srv = test::TestServer::build_with_state(|| {
             let server = Arbiter::start(|_| server::ChannelServer::default());
             let log = Arbiter::start(|_| logging::MozLogger::default());
 
-            let state = session::WsChannelSessionState {
+            session::WsChannelSessionState {
                 addr: server.clone(),
                 log: log.clone(),
-            };
-            build_app(App::with_state(state))
+            }
+        });
+        srv.start(|app| {
+            // Make this a trait eventually, for now, just copy build_app
+            app
+                .resource("/", |r| r.method(http::Method::GET).f(|_| {
+                    HttpResponse::NotFound()
+                        .finish()
+                }))
+                // websocket to an existing channel
+                .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
+                // connecting to an empty channel creates a new one.
+                .resource("/v1/ws/", |r| r.route().f(channel_route))
+                .resource("/__version__", |r| r.method(http::Method::GET).f(show_version))
+                .resource("/__heartbeat__", |r| r.method(http::Method::GET).f(heartbeat))
+                .resource("/__lbheartbeat__", |r| r.method(http::Method::GET).f(lbheartbeat));
         })
     }
 
@@ -225,31 +238,31 @@ mod test {
     #[ignore]
     #[test]
     fn test_websockets() {
-        /*        let channels =
-            Arc::new(Mutex::new(HashMap::<Uuid, HashMap<usize, server::Channel>>::new()));
-        let sessions =
-            Arc::new(Mutex::new(HashMap::<usize, Recipient<server::TextMessage>>::new()));
-        let mut srv = get_server(channels.clone(), sessions.clone());
-*/
+        /// Test broken.
+        // Something in actix REALLY doesn't like having two sockets talk to
+        // each other. This test will create the sockets, but messages sent
+        // between them get lost somewhere interally.
+        // Sometimes the messages make it through and get processed by
+        // the server, however, most times they simply don't get beyond the
+        // write. In any case, the recipient (reader1) never gets the
+        // message and the test hangs forever.
+        //
+        // for now, use the ../test_chan
         let mut srv = get_server();
         let (mut reader1, mut writer1) = srv.ws_at("/v1/ws/").unwrap();
         let (item, r) = srv.execute(reader1.into_future()).unwrap();
         reader1 = r;
         let link_addr = read(item.unwrap());
-        // for unknown reasons, this appears to not open the same
-        // server instance, or at least, does not open an instance with
-        // the same server index table. Two new "channel" entries
-        // are created.
+        println!("Connecting to {:?}", link_addr);
         let (mut reader2, mut writer2) = srv.ws_at(&link_addr).unwrap();
         let (item, r) = srv.execute(reader2.into_future()).unwrap();
-        let r2_addr = read(item.unwrap());
         reader2 = r;
+        let r2_addr = read(item.unwrap());
+        println!("Connected to {:?}", r2_addr);
         assert_eq!(link_addr, r2_addr);
         let test_phrase = "This is a test";
-        writer1.send_text("writer1");
         writer2.text("writer2");
-        let (item, r) = srv.execute(reader2.into_future()).unwrap();
-        reader2 = r;
+        let (item, r) = srv.execute(reader1.into_future()).unwrap();
         assert_eq!(test_phrase, &read(item.unwrap()));
     }
 }
