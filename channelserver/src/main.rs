@@ -121,13 +121,6 @@ fn main() {
     let logger = logging::MozLogger::new();
     let settings = settings::Settings::new().unwrap();
     let addr = format!("{}:{}", settings.hostname, settings.port);
-    /*
-    let sessions =
-        Arc::new(Mutex::new(HashMap::<usize, Recipient<server::TextMessage>>::new()));
-    let channels =
-        Arc::new(Mutex::new(HashMap::<Uuid, HashMap<usize, server::Channel>>::new()));
-    let server = Arbiter::start(|_| server::ChannelServer::init(channels, sessions));
-    */
     let server = Arbiter::start(|_| server::ChannelServer::default());
     let log = Arbiter::start(|_| logging::MozLogger::default());
 
@@ -158,9 +151,6 @@ mod test {
     use futures::Stream;
 
     use super::*;
-    // use server::{ChannelCollection, SessionCollection};
-
-    //fn get_server(channels: ChannelCollection, sessions: SessionCollection) -> test::TestServer {
     fn get_server() -> test::TestServer {
         let srv = test::TestServer::build_with_state(|| {
             let server = Arbiter::start(|_| server::ChannelServer::default());
@@ -190,13 +180,6 @@ mod test {
 
     #[test]
     fn test_heartbeats() {
-        /*
-        let channels =
-            Arc::new(Mutex::new(HashMap::<Uuid, HashMap<usize, server::Channel>>::new()));
-        let sessions =
-            Arc::new(Mutex::new(HashMap::<usize, Recipient<server::TextMessage>>::new()));
-        let mut srv = get_server(channels.clone(), sessions.clone());
-        */
         let mut srv = get_server();
         // Test the DockerFlow URLs
         {

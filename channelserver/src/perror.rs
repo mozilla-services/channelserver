@@ -21,6 +21,8 @@ pub enum HandlerErrorKind {
     XSDataErr,
     #[fail(display = "Excess Messages")]
     XSMessageErr,
+    #[fail(display = "Too many connections requested")]
+    XSConnectionErr,
     #[fail(display = "Connection Expired")]
     ExpiredErr,
     #[fail(display = "Channel Shutdown Requested")]
