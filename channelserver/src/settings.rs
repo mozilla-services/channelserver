@@ -7,7 +7,7 @@ static PREFIX: &str = "PAIR";
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     pub hostname: String,  // server hostname (localhost)
-    pub port: u16,         // server port (18000)
+    pub port: u16,         // server port (8000)
     pub max_clients: u8,   // Max clients per channel 2
     pub timeout: u64,      // seconds before channel timeout (300)
     pub max_exchanges: u8, // Max number of messages before channel shutdown (8)

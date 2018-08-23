@@ -3,10 +3,6 @@ name = "channelserver"
 version = "0.2.1"
 authors = ["jr conlin<me+src@jrconlin.com"]
 
-[build]
-jobs=8
-incremental=true
-
 [dependencies]
 config = "0.9.0"
 failure = "0.1.1"
