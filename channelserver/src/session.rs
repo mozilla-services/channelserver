@@ -86,7 +86,7 @@ impl Actor for WsChannelSession {
             // Broadcast the close to all attached clients.
             ctx.state().addr.do_send(server::ClientMessage {
                 id: 0,
-                msg: "\x04".to_owned(),
+                msg: server::EOL.to_owned(),
                 channel: self.channel.clone(),
             });
         }
@@ -99,7 +99,7 @@ impl Handler<server::TextMessage> for WsChannelSession {
     type Result = ();
 
     fn handle(&mut self, msg: server::TextMessage, ctx: &mut Self::Context) {
-        if msg.0 == "\x04" {
+        if msg.0 == server::EOL {
             ctx.state().log.do_send(logging::LogMessage {
                 level: logging::ErrorLevel::Debug,
                 msg: format!("Close recv'd for session [{:?}]", self.id),

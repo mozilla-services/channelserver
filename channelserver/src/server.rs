@@ -15,6 +15,8 @@ use logging::MozLogger;
 use perror;
 use settings::Settings;
 
+pub const EOL:&'static str = "\x04";
+
 /// Chat server sends this messages to session
 #[derive(Message)]
 pub struct TextMessage(pub String);
@@ -92,10 +94,10 @@ impl ChannelServer {
     ) -> Result<(), perror::HandlerError> {
         if let Some(participants) = self.channels.get_mut(channel) {
             // show's over, everyone go home.
-            if message == "\x04" {
+            if message == EOL {
                 for (id, info) in participants {
                     if let Some(addr) = self.sessions.get(id) {
-                        addr.do_send(TextMessage("\x04".to_owned())).unwrap_or(());
+                        addr.do_send(TextMessage(EOL.to_owned())).unwrap_or(());
                     }
                 }
                 return Err(perror::HandlerErrorKind::ShutdownErr.into());
@@ -145,7 +147,7 @@ impl ChannelServer {
             for (id, info) in participants {
                 if let Some(addr) = self.sessions.get(&id) {
                     // send a control message to force close
-                    addr.do_send(TextMessage("\x04".to_owned())).unwrap_or(());
+                    addr.do_send(TextMessage(EOL.to_owned())).unwrap_or(());
                 }
                 self.sessions.remove(&id);
             }
