@@ -12,6 +12,7 @@ pub struct MozLogger {
     pub log: slog::Logger,
 }
 
+#[allow(dead_code)]
 pub enum ErrorLevel {
     Debug,
     Info,

@@ -2,3 +2,8 @@
 .vscode/
 target/
 spake2_demo/target
+test_chan/bin/
+test_chan/include/
+test_chan/lib/
+test_chan/share/
+test_chan/test_chan/__pycache__/

@@ -5,7 +5,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use actix::{Actor, Addr, Context, Handler, Syn};
+use actix::{Actor, Addr, Context, Handler};
 use rand::{self, Rng, ThreadRng};
 use uuid::Uuid;
 
@@ -16,7 +16,7 @@ use session;
 #[rtype(usize)]
 pub struct Identify {
     pub id: Uuid,
-    pub addr: Addr<Syn, session::ClientSession>,
+    pub addr: Addr<session::ClientSession>,
 }
 
 /// Disconnect a websocket client that identified
@@ -34,7 +34,7 @@ pub struct ClientSend {
 }
 
 pub struct MessageRouter {
-    clients: HashMap<Uuid, (Addr<Syn, session::ClientSession>, usize)>,
+    clients: HashMap<Uuid, (Addr<session::ClientSession>, usize)>,
     rng: RefCell<ThreadRng>,
 }
 
