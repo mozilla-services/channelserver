@@ -5,9 +5,12 @@ use actix::{
     Running, StreamHandler, WrapFuture,
 };
 use actix_web::ws;
+// use cadence::{StatsdClient, Counted};
+use maxminddb;
 use uuid::Uuid;
 
 use logging;
+use meta::SenderData;
 use server;
 
 /// This is our websocket route state, this state is shared with all route
@@ -15,6 +18,8 @@ use server;
 pub struct WsChannelSessionState {
     pub addr: Addr<server::ChannelServer>,
     pub log: Addr<logging::MozLogger>,
+    pub iploc: maxminddb::Reader,
+    // pub metrics: StatsdClient,
 }
 
 pub struct WsChannelSession {
@@ -27,6 +32,7 @@ pub struct WsChannelSession {
     pub channel: Uuid,
     /// peer name
     pub name: Option<String>,
+    pub meta: SenderData,
 }
 
 impl Actor for WsChannelSession {
@@ -41,6 +47,7 @@ impl Actor for WsChannelSession {
         // HttpContext::state() is instance of WsChatSessionState, state is shared
         // across all routes within application
         let addr: Addr<Self> = ctx.address();
+        self.meta = SenderData::from(ctx.request().clone());
         ctx.state()
             .addr
             .send(server::Connect {
@@ -59,6 +66,7 @@ impl Actor for WsChannelSession {
                             level: logging::ErrorLevel::Debug,
                             msg: format!("Starting new session [{:?}]", session_id),
                         });
+                        // ctx.state().metrics.incr("conn.create").ok();
                         act.id = session_id;
                     }
                     // something is wrong with chat server
@@ -86,8 +94,9 @@ impl Actor for WsChannelSession {
             // Broadcast the close to all attached clients.
             ctx.state().addr.do_send(server::ClientMessage {
                 id: 0,
-                msg: server::EOL.to_owned(),
+                message: server::EOL.to_owned(),
                 channel: self.channel.clone(),
+                sender: SenderData::default(),
             });
         }
         Running::Stop
@@ -122,12 +131,12 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
             ws::Message::Ping(msg) => ctx.pong(&msg),
             ws::Message::Pong(msg) => self.hb = Instant::now(),
             ws::Message::Text(text) => {
-                let m = text.trim();
-                // send message to chat server
+                let mut m = text.trim();
                 ctx.state().addr.do_send(server::ClientMessage {
                     id: self.id,
-                    msg: m.to_owned(),
+                    message: m.to_owned(),
                     channel: self.channel.clone(),
+                    sender: self.meta.clone(),
                 })
             }
             ws::Message::Binary(bin) => {
