@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
+use actix::Addr;
 use actix_web::{http, HttpRequest};
-use maxminddb::{self, geoip2::City};
+use maxminddb::{self, geoip2::City, MaxMindDBError};
 
 use logging;
 use session::WsChannelSessionState;
@@ -12,7 +13,7 @@ pub struct SenderData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ua: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub addr: Option<String>,
+    pub remote: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub city: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -25,7 +26,7 @@ impl Default for SenderData {
     fn default() -> Self {
         Self {
             ua: None,
-            addr: None,
+            remote: None,
             city: None,
             region: None,
             country: None,
@@ -66,6 +67,12 @@ fn get_preferred_language_element(
     elements: BTreeMap<String, String>,
 ) -> Option<String> {
     for lang in langs {
+        // It's a wildcard, so just return the first possible choice.
+        if lang == "*" {
+            return elements.values().into_iter().next().map(|e|
+                e.to_owned()
+            )
+        }
         if elements.contains_key(lang) {
             if let Some(element) = elements.get(lang.as_str()) {
                 return Some(element.to_string());
@@ -83,13 +90,47 @@ fn get_preferred_language_element(
     None
 }
 
+fn handle_city_err(log: &Addr<logging::MozLogger>, err: &MaxMindDBError) {
+    match err {
+        maxminddb::MaxMindDBError::InvalidDatabaseError(s) =>
+            log.do_send(logging::LogMessage{
+                level: logging::ErrorLevel::Critical,
+                msg: format!("Invalid GeoIP database! {:?}", s)
+            }),
+        maxminddb::MaxMindDBError::IoError(s) => 
+            log.do_send(logging::LogMessage{
+                level: logging::ErrorLevel::Critical,
+                msg: format!("Could not read from database file! {:?}", s)
+            }),
+        maxminddb::MaxMindDBError::MapError(s) =>
+            log.do_send(logging::LogMessage{
+                level: logging::ErrorLevel::Warn,
+                msg: format!("Mapping error: {:?}", s)
+            }),
+        maxminddb::MaxMindDBError::DecodingError(s) =>
+            log.do_send(logging::LogMessage{
+                level: logging::ErrorLevel::Warn,
+                msg: format!("Could not decode mapping result: {:?}", s)
+            }),
+        maxminddb::MaxMindDBError::AddressNotFoundError(s) =>
+            log.do_send(logging::LogMessage{
+                level: logging::ErrorLevel::Debug,
+                msg: format!("Could not find address for IP: {:?}", s)
+            }),
+        _ => 
+            log.do_send(logging::LogMessage{
+                level: logging::ErrorLevel::Error,
+                msg: format!("Unknown GeoIP error encountered: {:?}", err)
+            })
+    }
+}
+
 // Set the sender meta information from the request headers.
 impl From<HttpRequest<WsChannelSessionState>> for SenderData {
     fn from(req: HttpRequest<WsChannelSessionState>) -> Self {
         let mut sender = SenderData::default();
         let headers = req.headers();
         let log = req.state().log.clone();
-        //TODO: Get the default lang
         let langs = match headers.get(http::header::ACCEPT_LANGUAGE) {
             None => vec![String::from("*")],
             Some(l) => {
@@ -121,13 +162,25 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
                 Ok(s) => Some(s.to_owned()),
             },
         };
-        sender.addr = match conn.remote() {
+        sender.remote = match conn.remote() {
             Some(a) => Some(a.to_owned()),
             None => None,
         };
-        if sender.addr.is_some() {
-            if let Ok(loc) = sender.addr.clone().unwrap().parse() {
-                if let Ok(city) = req.state().iploc.lookup::<City>(loc) {
+        if sender.remote.is_some() {
+            log.do_send(logging::LogMessage {
+                        level: logging::ErrorLevel::Debug,
+                        msg: format!("Looking up IP: {:?}", sender.remote),
+                    });
+            // Strip the port from the remote (if present)
+            let remote = sender.remote.clone().map(|mut r| {
+                    let end = r.find(':').unwrap_or(r.len());
+                    r.drain(..end).collect()
+            }).unwrap_or(String::from(""));
+            if let Ok(loc) = remote.parse() {
+                if let Ok(city) = req.state().iploc.lookup::<City>(loc).map_err(|err| {
+                    handle_city_err(&log, &err);
+                    err
+                }) {
                     /*
                         The structure of the returned maxminddb record is:
                         City:maxminddb::geoip::model::City {
@@ -190,11 +243,12 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
                 } else {
                     log.do_send(logging::LogMessage {
                         level: logging::ErrorLevel::Info,
-                        msg: format!("No location info for IP: {:?}", sender.addr),
+                        msg: format!("No location info for IP: {:?}", sender.remote),
                     });
                 }
             }
         }
+        println!("Sender: {:?}", sender);
         sender
     }
 }
