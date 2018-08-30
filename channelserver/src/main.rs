@@ -66,9 +66,9 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
         session::WsChannelSession {
             id: 0,
             hb: Instant::now(),
-            channel: channel.clone(),
+            channel: channel,
             name: None,
-            meta: meta_info.clone(),
+            meta: meta_info,
         },
     )
 }

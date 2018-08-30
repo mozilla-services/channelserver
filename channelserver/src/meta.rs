@@ -8,7 +8,7 @@ use logging;
 use session::WsChannelSessionState;
 
 // Sender meta data, drawn from the HTTP Headers of the connection counterpart.
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug, Default, Clone)]
 pub struct SenderData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ua: Option<String>,
@@ -20,18 +20,6 @@ pub struct SenderData {
     pub region: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub country: Option<String>,
-}
-
-impl Default for SenderData {
-    fn default() -> Self {
-        Self {
-            ua: None,
-            remote: None,
-            city: None,
-            region: None,
-            country: None,
-        }
-    }
 }
 
 // Parse the Accept-Language header to get the list of preferred languages.
@@ -162,10 +150,7 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
                 Ok(s) => Some(s.to_owned()),
             },
         };
-        sender.remote = match conn.remote() {
-            Some(a) => Some(a.to_owned()),
-            None => None,
-        };
+        sender.remote = conn.remote().map(|r| r.to_owned());
         if sender.remote.is_some() {
             log.do_send(logging::LogMessage {
                         level: logging::ErrorLevel::Debug,
@@ -248,7 +233,6 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
                 }
             }
         }
-        println!("Sender: {:?}", sender);
         sender
     }
 }

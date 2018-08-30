@@ -11,6 +11,7 @@ use settings::Settings;
 
 /// Create a cadence StatsdClient from the given options
 pub fn metrics_from_opts(settings: &Settings, log: logging::MozLogger) -> Result<StatsdClient, perror::HandlerError> {
+    let name = env!("CARGO_PKG_NAME");
     let builder = if settings.statsd_host.len() > 0 {
         let socket = UdpSocket::bind("0.0.0.0:0")?;
         socket.set_nonblocking(true)?;
@@ -25,9 +26,9 @@ pub fn metrics_from_opts(settings: &Settings, log: logging::MozLogger) -> Result
             (host.0, port),
             socket)?;
         let sink = QueuingMetricSink::from(udp_sink);
-        StatsdClient::builder("autopush", sink)
+        StatsdClient::builder(name, sink)
     } else {
-        StatsdClient::builder("autopush", NopMetricSink)
+        StatsdClient::builder(name, NopMetricSink)
     };
     Ok(builder
         .with_error_handler(move |err|
