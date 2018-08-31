@@ -24,23 +24,24 @@ extern crate slog_async;
 extern crate uuid;
 #[macro_use]
 extern crate slog_term;
+extern crate cadence;
+extern crate maxminddb;
 
 use std::path::Path;
 use std::time::Instant;
-//use std::sync::{Arc, Mutex};
-//use std::collections::HashMap;
 
 use actix::Arbiter;
-//use actix::prelude::{Recipient};
 use actix_web::server::HttpServer;
 use actix_web::{fs, http, ws, App, Error, HttpRequest, HttpResponse};
 use uuid::Uuid;
 
 mod logging;
+mod meta;
 mod perror;
 mod server;
 mod session;
 mod settings;
+// mod metrics;
 
 /*
  * based on the Actix websocket example ChatServer
@@ -58,13 +59,16 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
         level: logging::ErrorLevel::Info,
         msg: format!("Creating session for channel: \"{}\"", channel.simple()),
     });
+    let meta_info = meta::SenderData::from(req.clone());
+
     ws::start(
         req,
         session::WsChannelSession {
             id: 0,
             hb: Instant::now(),
-            channel: channel.clone(),
+            channel: channel,
             name: None,
+            meta: meta_info,
         },
     )
 }
@@ -115,13 +119,35 @@ fn main() {
     let addr = format!("{}:{}", settings.hostname, settings.port);
     let server = Arbiter::start(|_| server::ChannelServer::default());
     let log = Arbiter::start(|_| logging::MozLogger::default());
-
+    let msettings = settings.clone();
+    // check that the maxmind db is where it should be.
+    if !Path::new(&settings.mmdb_loc).exists() {
+        slog_error!(
+            logger.log,
+            "Cannot find geoip database: {}",
+            settings.mmdb_loc
+        );
+        return;
+    };
+    let db_loc = settings.mmdb_loc.clone();
     // Create Http server with websocket support
     HttpServer::new(move || {
+        /*
+        let metrics  = metrics::metrics_from_opts(
+            &msettings, logging::MozLogger::default()).unwrap();
+        */
+        let iploc = maxminddb::Reader::open(&db_loc).unwrap_or_else(|x| {
+            use std::process::exit;
+            println!("Could not read geoip database {:?}", x);
+            exit(1);
+        });
+
         // Websocket sessions state
         let state = session::WsChannelSessionState {
             addr: server.clone(),
             log: log.clone(),
+            iploc,
+            // metrics,
         };
 
         build_app(App::with_state(state))
@@ -141,16 +167,21 @@ mod test {
     use actix_web::ws;
     use actix_web::HttpMessage;
     use futures::Stream;
+    // use cadence::{StatsdClient, NopMetricSink};
 
     use super::*;
     fn get_server() -> test::TestServer {
         let srv = test::TestServer::build_with_state(|| {
             let server = Arbiter::start(|_| server::ChannelServer::default());
             let log = Arbiter::start(|_| logging::MozLogger::default());
+            let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
+            // let metrics = StatsdClient::builder("autopush", NopMetricSink).build();
 
             session::WsChannelSessionState {
                 addr: server.clone(),
                 log: log.clone(),
+                iploc,
+                // metrics,
             }
         });
         srv.start(|app| {
@@ -221,7 +252,7 @@ mod test {
         //
         // for now, use the ../test_chan
         let mut srv = get_server();
-        let (mut reader1, mut writer1) = srv.ws_at("/v1/ws/").unwrap();
+        let (mut reader1, writer1) = srv.ws_at("/v1/ws/").unwrap();
         let (item, r) = srv.execute(reader1.into_future()).unwrap();
         reader1 = r;
         let link_addr = read(item.unwrap());

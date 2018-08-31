@@ -1,5 +1,7 @@
 use std::fmt;
+use std::io;
 
+use cadence;
 use failure::{Backtrace, Context, Fail};
 
 /*
@@ -27,6 +29,12 @@ pub enum HandlerErrorKind {
     ExpiredErr,
     #[fail(display = "Channel Shutdown Requested")]
     ShutdownErr,
+    #[fail(display = "Error with GeoIP Database: {:?}", _0)]
+    GeoIPError(String),
+    #[fail(display = "IO Error: {:?}", _0)]
+    IOError(String),
+    #[fail(display = "Could not start metrics: {:?}", _0)]
+    MetricsError(String),
 }
 
 /*
@@ -63,5 +71,17 @@ impl From<HandlerErrorKind> for HandlerError {
 impl From<Context<HandlerErrorKind>> for HandlerError {
     fn from(inner: Context<HandlerErrorKind>) -> HandlerError {
         HandlerError { inner }
+    }
+}
+
+impl From<io::Error> for HandlerError {
+    fn from(err: io::Error) -> HandlerError {
+        Context::new(HandlerErrorKind::IOError(format!("{:?}", err))).into()
+    }
+}
+
+impl From<cadence::MetricError> for HandlerError {
+    fn from(err: cadence::MetricError) -> HandlerError {
+        Context::new(HandlerErrorKind::MetricsError(format!("{:?}", err))).into()
     }
 }

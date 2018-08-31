@@ -8,14 +8,17 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use actix::prelude::{Actor, Context, Handler, Recipient};
+// use cadence::StatsdClient;
 use rand::{self, Rng, ThreadRng};
 use uuid::Uuid;
 
 use logging::MozLogger;
+use meta;
+// use metrics;
 use perror;
 use settings::Settings;
 
-pub const EOL:&'static str = "\x04";
+pub const EOL: &'static str = "\x04";
 
 /// Chat server sends this messages to session
 #[derive(Message)]
@@ -42,17 +45,19 @@ pub struct Disconnect {
 }
 
 /// Send message to specific channel
-#[derive(Message)]
+#[derive(Message, Serialize, Debug)]
 pub struct ClientMessage {
     /// Id of the client session
     pub id: SessionId,
     /// Peer message
-    pub msg: String,
+    pub message: String,
     /// channel name
     pub channel: Uuid,
+    /// Sender info
+    pub sender: meta::SenderData,
 }
 
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+#[derive(Eq, PartialEq, Clone, Debug)]
 pub struct Channel {
     pub id: ChannelId,
     pub started: Instant,
@@ -70,16 +75,21 @@ pub struct ChannelServer {
     rng: RefCell<ThreadRng>,
     log: MozLogger,
     pub settings: RefCell<Settings>,
+    // pub metrics: RefCell<StatsdClient>,
 }
 
 impl Default for ChannelServer {
     fn default() -> ChannelServer {
+        let settings = Settings::new().unwrap();
+        let logger = MozLogger::default();
+        // let metrics = metrics::metrics_from_opts(&settings.clone(), logger.clone()).unwrap();
         ChannelServer {
             channels: HashMap::new(),
             sessions: HashMap::new(),
             rng: RefCell::new(rand::thread_rng()),
-            log: MozLogger::default(),
-            settings: RefCell::new(Settings::new().unwrap()),
+            log: logger.clone(),
+            settings: RefCell::new(settings.clone()),
+            // metrics: RefCell::new(metrics.clone())
         }
     }
 }
@@ -105,6 +115,7 @@ impl ChannelServer {
             for party in participants.values_mut() {
                 if party.started.elapsed().as_secs() > self.settings.borrow().timeout {
                     info!(self.log.log, "Connection {} expired, closing", channel);
+                    // self.metrics.borrow().incr("conn.max.time").ok();
                     return Err(perror::HandlerErrorKind::ExpiredErr.into());
                 }
                 let max_data: usize = self.settings.borrow().max_data as usize;
@@ -112,9 +123,9 @@ impl ChannelServer {
                 if max_data > 0 && (party.data_exchanged > max_data || msg_len > max_data) {
                     info!(
                         self.log.log,
-                        "Too much data sent through {}, closing",
-                        channel
+                        "Too much data sent through {}, closing", channel
                     );
+                    // self.metrics.borrow().incr("conn.max.data").ok();
                     return Err(perror::HandlerErrorKind::XSDataErr.into());
                 }
                 party.data_exchanged += msg_len;
@@ -123,9 +134,9 @@ impl ChannelServer {
                 if msg_count > 0 && party.msg_count > msg_count {
                     info!(
                         self.log.log,
-                        "Too many messages through {}, closing",
-                        channel
+                        "Too many messages through {}, closing", channel
                     );
+                    // self.metrics.borrow().incr("conn.max.msg").ok();
                     return Err(perror::HandlerErrorKind::XSMessageErr.into());
                 }
                 if party.id != skip_id {
@@ -184,42 +195,41 @@ impl Handler<Connect> for ChannelServer {
             &msg.channel.simple(),
             &new_chan.id
         );
-
         let chan_id = &msg.channel.simple();
         {
             if !self.channels.contains_key(&msg.channel) {
                 debug!(
                     self.log.log,
-                    "Creating new channel set {}: [{}]",
-                    chan_id,
-                    &new_chan.id,
+                    "Creating new channel set {}: [{}]", chan_id, &new_chan.id,
                 );
                 self.channels.insert(msg.channel, HashMap::new());
+            // self.metrics.borrow().incr("conn.new").ok();
             } else {
                 debug!(
                     self.log.log,
-                    "Adding session [{}] to existing channel set {}",
-                    &new_chan.id,
-                    chan_id
-                )
+                    "Adding session [{}] to existing channel set {}", &new_chan.id, chan_id
+                );
+                // self.metrics.borrow().incr("conn.joined").ok();
             }
-            // we've already checked and created this, so calling unwrap 
+            // we've already checked and created this, so calling unwrap
             // should be safe. Creating here hits lifetime exceptions as
             // well.
             let group = self.channels.get_mut(&msg.channel).unwrap();
             if group.len() >= self.settings.borrow().max_clients.into() {
                 info!(
                     self.log.log,
-                    "Too many connections requested for channel {}", 
-                    chan_id);
+                    "Too many connections requested for channel {}", chan_id
+                );
                 self.sessions.remove(&new_chan.id);
+                // self.metrics.borrow().incr("conn.max.conn").ok();
                 return 0;
             }
             group.insert(session_id.clone(), new_chan);
             debug!(self.log.log, "channel {}: [{:?}]", chan_id, group,);
         }
         // tell the client what their channel is.
-        &msg.addr.do_send(TextMessage(format!("/v1/ws/{}", chan_id)));
+        let jpath = json!({ "link": format!("/v1/ws/{}", chan_id) });
+        &msg.addr.do_send(TextMessage(jpath.to_string()));
 
         // send id back
         session_id
@@ -246,7 +256,18 @@ impl Handler<ClientMessage> for ChannelServer {
     type Result = ();
 
     fn handle(&mut self, msg: ClientMessage, _: &mut Context<Self>) {
-        if self.send_message(&msg.channel, msg.msg.as_str(), msg.id)
+        if &msg.message == "\x04" {
+            self.shutdown(&msg.channel)
+        }
+        if self
+            .send_message(
+                &msg.channel,
+                &json!({
+                    "message": &msg.message,
+                    "sender": &msg.sender,
+                }).to_string(),
+                msg.id,
+            )
             .is_err()
         {
             self.shutdown(&msg.channel)

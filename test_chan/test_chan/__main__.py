@@ -2,6 +2,7 @@ import time
 import os
 import base64
 import subprocess
+import json
 
 import psutil
 import websocket
@@ -25,7 +26,8 @@ class Connection(object):
         except ValueError as ex:
             print(ex)
             raise
-        self.link = self.ws.recv()
+        body = json.loads(self.ws.recv())
+        self.link = body["link"]
 
     def send(self, message):
         self.ws.send(message)
@@ -34,7 +36,6 @@ class Connection(object):
         return self.ws.recv()
 
     def is_closed(self):
-        import pdb; pdb.set_trace()
         return not self.ws.connected
 
     def close(self):
@@ -70,7 +71,9 @@ def shutdown():
         for child in parent.children(recursive=True):
             os.kill(child.pid, 9)
         os.kill(proc.pid, 9)
+        time.sleep(2)
         os.wait()
+        print("shutdown")
     except Exception as ex:
         print("Kill failed {}", ex)
 
@@ -85,7 +88,9 @@ def simple_connection(opts):
     (alice, bob) = get_connection(opts)
     message = "Test message"
     alice.send(message)
-    assert(message == bob.recv())
+    body = json.loads(bob.recv())
+    assert message == body["message"]
+    assert "sender" in body
     print("ok")
 
 
@@ -93,12 +98,12 @@ def full_exchange(opts):
     (alice, bob) = get_connection(opts)
     message = """intro message"""
     alice.send(message)
-    assert message == bob.recv(), "Intro didn't match"
+    assert message == json.loads(bob.recv())["message"], "Intro didn't match"
     # channelserv only deals with text currently
     message = base64.b85encode(os.urandom(2000)).decode("utf8")
     alice.send(message)
-    bm = bob.recv()
-    assert message == bm, "Message didn't match"
+    bm = json.loads(bob.recv())
+    assert message == bm["message"], "Message didn't match"
     print("ok")
 
 
