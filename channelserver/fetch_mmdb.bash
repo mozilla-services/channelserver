@@ -4,6 +4,7 @@
 #
 mkdir -p mmdb
 pushd mmdb
+rm *.tar.gz
 wget http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.tar.gz
 tar -zxvf GeoLite2-City.tar.gz
 if [ -e latest ]; then rm latest; fi

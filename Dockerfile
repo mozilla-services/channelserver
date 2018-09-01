@@ -13,8 +13,12 @@ RUN \
     mkdir -m 755 bin && \
     cargo build --release && \
     cp /app/target/release/channelserver /app/bin && \
-    cp /app/channelserver/version.json /app
+    cp /app/channelserver/version.json /app && \
+    cp /app/channelserver/fetch_mmdb.bash /app
 
+
+# Fetch the mmdb database
+RUN /bin/bash /app/fetch_mmdb.bash
 
 FROM debian:stretch-slim
 # FROM debian:stretch  # for debugging docker build
@@ -30,6 +34,7 @@ RUN \
 
 COPY --from=builder /app/bin /app/bin
 COPY --from=builder /app/version.json /app
+COPY --from=builder /app/mmdb /app/mmdb
 
 WORKDIR /app
 USER app

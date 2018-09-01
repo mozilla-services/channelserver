@@ -108,14 +108,16 @@ impl Handler<server::TextMessage> for WsChannelSession {
     type Result = ();
 
     fn handle(&mut self, msg: server::TextMessage, ctx: &mut Self::Context) {
-        if msg.0 == server::EOL {
-            ctx.state().log.do_send(logging::LogMessage {
-                level: logging::ErrorLevel::Debug,
-                msg: format!("Close recv'd for session [{:?}]", self.id),
-            });
-            ctx.close(None);
-        } else {
-            ctx.text(msg.0);
+        match msg.0 {
+            server::MessageType::Terminate => {
+                ctx.state().log.do_send(logging::LogMessage {
+                    level: logging::ErrorLevel::Debug,
+                    msg: format!("Closing session [{:?}]", self.id),
+                });
+                ctx.close(Some(ws::CloseCode::Normal.into()));
+                
+            }
+            server::MessageType::Text => ctx.text(msg.1)
         }
     }
 }

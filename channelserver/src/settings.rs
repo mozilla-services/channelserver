@@ -10,7 +10,7 @@ pub struct Settings {
     pub port: u16,           // server port (8000)
     pub max_clients: u8,     // Max clients per channel (2)
     pub timeout: u64,        // seconds before channel timeout (300)
-    pub max_exchanges: u8,   // Max number of messages before channel shutdown (8)
+    pub max_exchanges: u8,   // Max number of messages before channel shutdown (3)
     pub max_data: u64,       // Max amount of data octets to exchange (0 ; unlimited)
     pub debug: bool,         // In debug mode? (false)
     pub verbose: bool,       // Verbose Errors? (false)
@@ -24,7 +24,7 @@ impl Settings {
 
         settings.set_default("debug", false)?;
         settings.set_default("verbose", false)?;
-        settings.set_default("max_exchanges", 0)?;
+        settings.set_default("max_exchanges", 3)?;
         settings.set_default("timeout", 300)?;
         settings.set_default("max_clients", 2)?;
         settings.set_default("max_data", 0)?;

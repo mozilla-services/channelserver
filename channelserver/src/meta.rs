@@ -340,14 +340,34 @@ mod test {
         assert_eq!(None, get_ua(&empty_headers, None));
     }
 
-    #[ignore]
     #[test]
-    fn test_location() {
-        let test_ip = "63.245.208.195"; // Mozilla
+    fn test_location_good() {
+        let mut test_ip = "63.245.208.195"; // Mozilla
 
         let langs = vec!["en".to_owned()];
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
+        let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
+        get_location(&mut sender, &langs, None, &iploc);
+        assert_eq!(sender.city, Some("Sacramento".to_owned()));
+        assert_eq!(sender.region, Some("California".to_owned()));
+        assert_eq!(sender.country, Some("United States".to_owned()));
     }
+
+    #[test]
+    fn test_location_bad() {
+        let mut test_ip = "192.168.1.1"; 
+
+        let langs = vec!["en".to_owned()];
+        let mut sender = SenderData::default();
+        sender.remote = Some(test_ip.to_owned());
+        // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
+        let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
+        get_location(&mut sender, &langs, None, &iploc);
+        assert_eq!(sender.city, None);
+        assert_eq!(sender.region, None);
+        assert_eq!(sender.country, None);
+    }
+
 }
