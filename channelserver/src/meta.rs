@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use actix::Addr;
 use actix_web::{http, HttpRequest};
+use http::header::{self, HeaderName};
 use maxminddb::{self, geoip2::City, MaxMindDBError};
 
 use logging;
@@ -142,6 +143,53 @@ fn get_ua(headers: &http::HeaderMap, log: Option<&Addr<logging::MozLogger>>) -> 
     None
 }
 
+fn get_remote(headers: &http::HeaderMap, whitelist: &Vec<String>) -> Option<String> {
+    // Actix determines the connection_info.remote() from the first entry in the
+    // Forwarded then X-Fowarded-For then peer name. The problem is that any
+    // of those could be multiple entries or may point to a known proxy.
+    // Check the FORWARDED header first.
+    for header in headers.get_all(header::FORWARDED) {
+        if let Ok(val) = header.to_str() {
+            for pair in val.split(';') {
+                for el in pair.split(',') {
+                    let mut items = el.trim().splitn(2, '=');
+                    if let Some(name) = items.next() {
+                        if let Some(val) = items.next() {
+                            if !whitelist.contains(&val.trim().to_owned()) {
+                                // there are four qualified identifiers:
+                                // by: the interface where the request came in.
+                                // for: the client that initiated the request
+                                // host: the Host request header as rec'vd by the proxy
+                                // proto: the protocol.
+                                // "for" is analagous to the value from X-Forwarded-For, but
+                                // some argument could be made for using "host"
+                                if &name.to_lowercase() as &str == "for" {
+                                    return Some(val.trim().to_owned());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // And then the backup headers
+    for backups in vec!["x-forwarded-host", "x-forwarded-for"] {
+        let backup = backups.as_bytes();
+        if let Some(header) = headers.get(HeaderName::from_lowercase(backup).unwrap()) {
+            if let Ok(hstr) = header.to_str() {
+                for host_str in hstr.split(',') {
+                    let host = host_str.trim().to_owned();
+                    if !whitelist.contains(&host) {
+                        return Some(host);
+                    }
+                }
+            }
+        }
+    }
+    return None;
+}
+
 fn get_location(
     sender: &mut SenderData,
     langs: &Vec<String>,
@@ -264,7 +312,8 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
         };
         // parse user-header for platform info
         sender.ua = get_ua(&headers, Some(&log));
-        sender.remote = req.connection_info().remote().map(|rem| rem.to_owned());
+        // Ideally, this would just get &req. For testing, I'm passing in the values.
+        sender.remote = get_remote(&req.headers(), &req.state().proxy_whitelist);
         get_location(&mut sender, &langs, Some(&log), &req.state().iploc);
         sender
     }
@@ -273,8 +322,9 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
 #[cfg(test)]
 mod test {
     use super::*;
+    use actix_web::{self, server, HttpRequest};
     use std::collections::BTreeMap;
-    
+
     use http;
 
     #[test]
@@ -331,10 +381,16 @@ mod test {
         let good_header = "Mozilla/5.0 Foo";
         let blank_header = "";
         let mut good_headers = http::HeaderMap::new();
-        good_headers.insert(http::header::USER_AGENT, http::header::HeaderValue::from_static(good_header));
+        good_headers.insert(
+            http::header::USER_AGENT,
+            http::header::HeaderValue::from_static(good_header),
+        );
         assert_eq!(Some(good_header.to_owned()), get_ua(&good_headers, None));
         let mut blank_headers = http::HeaderMap::new();
-        blank_headers.insert(http::header::USER_AGENT, http::header::HeaderValue::from_static(blank_header));
+        blank_headers.insert(
+            http::header::USER_AGENT,
+            http::header::HeaderValue::from_static(blank_header),
+        );
         assert_eq!(None, get_ua(&blank_headers, None));
         let empty_headers = http::HeaderMap::new();
         assert_eq!(None, get_ua(&empty_headers, None));
@@ -342,7 +398,7 @@ mod test {
 
     #[test]
     fn test_location_good() {
-        let mut test_ip = "63.245.208.195"; // Mozilla
+        let test_ip = "63.245.208.195"; // Mozilla
 
         let langs = vec!["en".to_owned()];
         let mut sender = SenderData::default();
@@ -357,7 +413,7 @@ mod test {
 
     #[test]
     fn test_location_bad() {
-        let mut test_ip = "192.168.1.1"; 
+        let test_ip = "192.168.1.1";
 
         let langs = vec!["en".to_owned()];
         let mut sender = SenderData::default();
@@ -370,4 +426,34 @@ mod test {
         assert_eq!(sender.country, None);
     }
 
+    #[test]
+    fn test_get_remote() {
+        let mut headers = actix_web::http::header::HeaderMap::new();
+
+        let whitelist = vec!["192.168.0.1".to_owned()];
+
+        headers.insert(
+            http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
+            "192.168.0.1, 10.10.10.10".parse().unwrap(),
+        );
+
+        let remote = get_remote(&headers, &whitelist);
+        assert_eq!(remote, Some("10.10.10.10".to_owned()));
+
+        // Adding a header which should override the previous "success"
+        headers.insert(
+            http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
+            "192.168.0.1, 10.11.11.11".parse().unwrap(),
+        );
+
+        let remote = get_remote(&headers, &whitelist);
+        assert_eq!(remote, Some("10.11.11.11".to_owned()));
+
+        // Adding the Primary header
+        headers.insert(http::header::HeaderName::from_lowercase("forwarded".as_bytes()).unwrap(), 
+            "for=192.168.0.1;by=10.09.09.09,by=10.10.10.10;proto=http;for=10.12.12.12;host=10.13.13.13".parse().unwrap());
+
+        let remote = get_remote(&headers, &whitelist);
+        assert_eq!(remote, Some("10.12.12.12".to_owned()));
+    }
 }

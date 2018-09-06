@@ -120,6 +120,16 @@ fn main() {
     let server = Arbiter::start(|_| server::ChannelServer::default());
     let log = Arbiter::start(|_| logging::MozLogger::default());
     let msettings = settings.clone();
+    let mut whitelist: Vec<String> = Vec::new();
+    // Add the list of known proxies.
+    if settings.proxy_whitelist.len() > 0 {
+        for mut proxy in settings.proxy_whitelist.split(",") {
+            proxy = proxy.trim();
+            if proxy.len() > 0 {
+                whitelist.push(proxy.to_owned());
+            }
+        }
+    }
     // check that the maxmind db is where it should be.
     if !Path::new(&settings.mmdb_loc).exists() {
         slog_error!(
@@ -141,13 +151,13 @@ fn main() {
             println!("Could not read geoip database {:?}", x);
             exit(1);
         });
-
         // Websocket sessions state
         let state = session::WsChannelSessionState {
             addr: server.clone(),
             log: log.clone(),
             iploc,
             // metrics,
+            proxy_whitelist: whitelist.clone(),
         };
 
         build_app(App::with_state(state))
@@ -182,6 +192,7 @@ mod test {
                 log: log.clone(),
                 iploc,
                 // metrics,
+                proxy_whitelist: vec![],
             }
         });
         srv.start(|app| {

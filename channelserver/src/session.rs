@@ -20,6 +20,7 @@ pub struct WsChannelSessionState {
     pub log: Addr<logging::MozLogger>,
     pub iploc: maxminddb::Reader,
     // pub metrics: StatsdClient,
+    pub proxy_whitelist: Vec<String>,
 }
 
 pub struct WsChannelSession {
@@ -94,6 +95,7 @@ impl Actor for WsChannelSession {
             // Broadcast the close to all attached clients.
             ctx.state().addr.do_send(server::ClientMessage {
                 id: 0,
+                message_type: server::MessageType::Terminate,
                 message: server::EOL.to_owned(),
                 channel: self.channel.clone(),
                 sender: SenderData::default(),
@@ -115,9 +117,8 @@ impl Handler<server::TextMessage> for WsChannelSession {
                     msg: format!("Closing session [{:?}]", self.id),
                 });
                 ctx.close(Some(ws::CloseCode::Normal.into()));
-                
             }
-            server::MessageType::Text => ctx.text(msg.1)
+            server::MessageType::Text => ctx.text(msg.1),
         }
     }
 }
@@ -136,6 +137,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
                 let mut m = text.trim();
                 ctx.state().addr.do_send(server::ClientMessage {
                     id: self.id,
+                    message_type: server::MessageType::Text,
                     message: m.to_owned(),
                     channel: self.channel.clone(),
                     sender: self.meta.clone(),
