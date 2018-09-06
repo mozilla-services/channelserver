@@ -143,7 +143,7 @@ fn get_ua(headers: &http::HeaderMap, log: Option<&Addr<logging::MozLogger>>) -> 
     None
 }
 
-fn get_remote(headers: &http::HeaderMap, whitelist: &Vec<String>) -> Option<String> {
+fn get_remote(headers: &http::HeaderMap, allowlist: &Vec<String>) -> Option<String> {
     // Actix determines the connection_info.remote() from the first entry in the
     // Forwarded then X-Fowarded-For then peer name. The problem is that any
     // of those could be multiple entries or may point to a known proxy.
@@ -155,7 +155,7 @@ fn get_remote(headers: &http::HeaderMap, whitelist: &Vec<String>) -> Option<Stri
                     let mut items = el.trim().splitn(2, '=');
                     if let Some(name) = items.next() {
                         if let Some(val) = items.next() {
-                            if !whitelist.contains(&val.trim().to_owned()) {
+                            if !allowlist.contains(&val.trim().to_owned()) {
                                 // there are four qualified identifiers:
                                 // by: the interface where the request came in.
                                 // for: the client that initiated the request
@@ -180,7 +180,7 @@ fn get_remote(headers: &http::HeaderMap, whitelist: &Vec<String>) -> Option<Stri
             if let Ok(hstr) = header.to_str() {
                 for host_str in hstr.split(',') {
                     let host = host_str.trim().to_owned();
-                    if !whitelist.contains(&host) {
+                    if !allowlist.contains(&host) {
                         return Some(host);
                     }
                 }
@@ -313,7 +313,7 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
         // parse user-header for platform info
         sender.ua = get_ua(&headers, Some(&log));
         // Ideally, this would just get &req. For testing, I'm passing in the values.
-        sender.remote = get_remote(&req.headers(), &req.state().proxy_whitelist);
+        sender.remote = get_remote(&req.headers(), &req.state().proxy_allowlist);
         get_location(&mut sender, &langs, Some(&log), &req.state().iploc);
         sender
     }
@@ -430,14 +430,14 @@ mod test {
     fn test_get_remote() {
         let mut headers = actix_web::http::header::HeaderMap::new();
 
-        let whitelist = vec!["192.168.0.1".to_owned()];
+        let allowlist = vec!["192.168.0.1".to_owned()];
 
         headers.insert(
             http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
             "192.168.0.1, 10.10.10.10".parse().unwrap(),
         );
 
-        let remote = get_remote(&headers, &whitelist);
+        let remote = get_remote(&headers, &allowlist);
         assert_eq!(remote, Some("10.10.10.10".to_owned()));
 
         // Adding a header which should override the previous "success"
@@ -446,14 +446,14 @@ mod test {
             "192.168.0.1, 10.11.11.11".parse().unwrap(),
         );
 
-        let remote = get_remote(&headers, &whitelist);
+        let remote = get_remote(&headers, &allowlist);
         assert_eq!(remote, Some("10.11.11.11".to_owned()));
 
         // Adding the Primary header
-        headers.insert(http::header::HeaderName::from_lowercase("forwarded".as_bytes()).unwrap(), 
+        headers.insert(http::header::HeaderName::from_lowercase("forwarded".as_bytes()).unwrap(),
             "for=192.168.0.1;by=10.09.09.09,by=10.10.10.10;proto=http;for=10.12.12.12;host=10.13.13.13".parse().unwrap());
 
-        let remote = get_remote(&headers, &whitelist);
+        let remote = get_remote(&headers, &allowlist);
         assert_eq!(remote, Some("10.12.12.12".to_owned()));
     }
 }

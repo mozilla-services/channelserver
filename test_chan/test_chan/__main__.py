@@ -6,7 +6,6 @@ import json
 
 import psutil
 import websocket
-import websocket._abnf as abnf
 
 
 proc = None
@@ -48,7 +47,6 @@ class Config(object):
     host = "localhost"
     port = "8000"
     app_path = "../target/debug/channelserver"
-    max_data = "0"
 
     def base(self):
         return "{}://{}:{}".format(self.protocol, self.host, self.port)
@@ -145,21 +143,14 @@ def max_exchange(opts, max_exchange=5):
 def main():
     opts = Config()
     try:
-        setup(opts)
+        setup(opts, max_data="2048")
         simple_connection(opts)
         full_exchange(opts)
-    except Exception as ex:
-        print("ERR:: {}".format(ex))
-        raise
-    finally:
-        shutdown()
-    try:
-        setup(opts, max_data="200")
         max_data(opts, 3096)
         max_exchange(opts, 5)
         print("\n\n All tests passed")
     except Exception as ex:
-        print("ERR::", ex)
+        print("ERR:: {}".format(ex))
         raise
     finally:
         shutdown()

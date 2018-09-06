@@ -20,7 +20,7 @@ pub struct WsChannelSessionState {
     pub log: Addr<logging::MozLogger>,
     pub iploc: maxminddb::Reader,
     // pub metrics: StatsdClient,
-    pub proxy_whitelist: Vec<String>,
+    pub proxy_allowlist: Vec<String>,
 }
 
 pub struct WsChannelSession {

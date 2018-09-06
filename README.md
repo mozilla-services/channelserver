@@ -6,4 +6,8 @@ Pairing work for communication between devices/applications.
 
 Contains:
 
-- [linkserver](./linkserver/) - lightweight websocket message relayer
+- [channelserver](./channelserver/) - websocket message relay server.
+- [spake2_demo](./spake2_demo/) - Client rust SPAKE2 auth demo.
+- [test_chan](./test_chan/) - python based external integration tester
+  for channelserver.
+
