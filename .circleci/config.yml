@@ -45,21 +45,6 @@ jobs:
           paths:
             - /cache/docker.tar
 
-  test:
-    docker:
-      - image: docker:18.02.0-ce
-    steps:
-      - setup_remote_docker
-      - restore_cache:
-          key: v1-{{ .Branch }}-{{ .Environment.CIRCLE_TAG }}
-      - run:
-          name: Restore Docker image cache
-          command: docker load -i /cache/docker.tar
-
-      - run:
-          name: Test Code
-          command: docker run app:build test
-
   deploy:
     docker:
       - image: docker:18.02.0-ce
@@ -74,31 +59,33 @@ jobs:
       - run:
           name: Deploy to Dockerhub
           command: |
-            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-            # deploy master
             if [ "${CIRCLE_BRANCH}" == "master" ]; then
-              docker tag app:build ${DOCKERHUB_REPO}:latest
-              docker push ${DOCKERHUB_REPO}:latest
-            elif  [ ! -z "${CIRCLE_TAG}" ]; then
-            # deploy a release tag...
-              echo "${DOCKERHUB_REPO}:${CIRCLE_TAG}"
-              docker tag app:build "${DOCKERHUB_REPO}:${CIRCLE_TAG}"
+              DOCKER_TAG="latest"
+            fi
+
+            if echo "${CIRCLE_BRANCH}" | grep '^feature\..*' > /dev/null; then
+              DOCKER_TAG="${CIRCLE_BRANCH}"
+            fi
+
+            if [ -n "${CIRCLE_TAG}" ]; then
+              DOCKER_TAG="$CIRCLE_TAG"
+            fi
+
+            if [ -n "${DOCKER_TAG}" ]; then
+              echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+              echo ${DOCKERHUB_REPO}:${DOCKER_TAG}
+              docker tag app:build ${DOCKERHUB_REPO}:${DOCKER_TAG}
               docker images
-              docker push "${DOCKERHUB_REPO}:${CIRCLE_TAG}"
+              docker push "${DOCKERHUB_REPO}:${DOCKER_TAG}"
+            else
+              echo "Not pushing to dockerhub for tag=${CIRCLE_TAG} branch=${CIRCLE_BRANCH}"
             fi
 
 workflows:
   version: 2
-  build-test-deploy:
+  build-deploy:
     jobs:
       - build:
-          filters:
-            tags:
-              only: /.*/
-
-      - test:
-          requires:
-            - build
           filters:
             tags:
               only: /.*/
@@ -106,10 +93,7 @@ workflows:
       - deploy:
           requires:
             - build
-            - test
           filters:
             tags:
               only: /.*/
-            branches:
-              only: master
 
