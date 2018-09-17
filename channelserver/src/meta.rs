@@ -143,29 +143,38 @@ fn get_ua(headers: &http::HeaderMap, log: Option<&Addr<logging::MozLogger>>) -> 
     None
 }
 
-fn get_remote(headers: &http::HeaderMap, allowlist: &Vec<String>) -> Option<String> {
+fn get_remote(headers: &http::HeaderMap, allowlist: &[String]) -> Option<String> {
     // Actix determines the connection_info.remote() from the first entry in the
     // Forwarded then X-Fowarded-For then peer name. The problem is that any
     // of those could be multiple entries or may point to a known proxy.
-    // Check the FORWARDED header first.
+    // Check the [FORWARDED](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) 
+    // header first.
+    // Forwarded is a comma separated set of sub-fields that indicate the prior connection. The
+    // `for=` sub key identifies the origin. Each new server should be appended to 
+    // the end of this list. 
+    // (e.g. 
+    // `Forwarded: by=<identifier>; for=<identifier>; host=<host>; proto=<http|https>, for=<identifier>...` 
+    // ) 
     for header in headers.get_all(header::FORWARDED) {
         if let Ok(val) = header.to_str() {
-            for pair in val.split(';') {
-                for el in pair.split(',') {
+            // Remember, latest servers are appended. See 
+            // https://tools.ietf.org/html/rfc7239#section-4
+            let mut components:Vec<&str> = val.split(',').collect();
+            components.reverse();
+            for set in components {
+                for el in set.split(';') {
                     let mut items = el.trim().splitn(2, '=');
                     if let Some(name) = items.next() {
                         if let Some(val) = items.next() {
-                            if !allowlist.contains(&val.trim().to_owned()) {
-                                // there are four qualified identifiers:
-                                // by: the interface where the request came in.
-                                // for: the client that initiated the request
-                                // host: the Host request header as rec'vd by the proxy
-                                // proto: the protocol.
-                                // "for" is analagous to the value from X-Forwarded-For, but
-                                // some argument could be made for using "host"
-                                if &name.to_lowercase() as &str == "for" {
-                                    return Some(val.trim().to_owned());
-                                }
+                            // there are four qualified identifiers:
+                            // by: the interface where the request came in.
+                            // for: the client that initiated the request
+                            // host: the Host request header as rec'vd by the proxy
+                            // proto: the protocol.
+                            // "for" is analagous to the value from X-Forwarded-For, but
+                            // some argument could be made for using "host"
+                            if &name.to_lowercase() as &str == "for" && !allowlist.contains(&val.trim().to_owned()) {
+                                return Some(val.trim().to_owned());
                             }
                         }
                     }
@@ -174,11 +183,14 @@ fn get_remote(headers: &http::HeaderMap, allowlist: &Vec<String>) -> Option<Stri
         }
     }
     // And then the backup headers
-    for backups in vec!["x-forwarded-host", "x-forwarded-for"] {
+    for backups in vec!["x-forwarded-for"] {
         let backup = backups.as_bytes();
         if let Some(header) = headers.get(HeaderName::from_lowercase(backup).unwrap()) {
             if let Ok(hstr) = header.to_str() {
-                for host_str in hstr.split(',') {
+                // Just like `Forward` successive proxies are appeneded to this header.
+                let mut host_list:Vec<&str> = hstr.split(',').collect();
+                host_list.reverse();
+                for host_str in host_list {
                     let host = host_str.trim().to_owned();
                     if !allowlist.contains(&host) {
                         return Some(host);
@@ -187,7 +199,7 @@ fn get_remote(headers: &http::HeaderMap, allowlist: &Vec<String>) -> Option<Stri
             }
         }
     }
-    return None;
+    None
 }
 
 fn get_location(
@@ -434,7 +446,7 @@ mod test {
 
         headers.insert(
             http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
-            "192.168.0.1, 10.10.10.10".parse().unwrap(),
+            "10.10.10.10, 192.168.0.1".parse().unwrap(),
         );
 
         let remote = get_remote(&headers, &allowlist);
@@ -443,7 +455,7 @@ mod test {
         // Adding a header which should override the previous "success"
         headers.insert(
             http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
-            "192.168.0.1, 10.11.11.11".parse().unwrap(),
+            "10.11.11.11, 192.168.0.1".parse().unwrap(),
         );
 
         let remote = get_remote(&headers, &allowlist);
@@ -451,7 +463,7 @@ mod test {
 
         // Adding the Primary header
         headers.insert(http::header::HeaderName::from_lowercase("forwarded".as_bytes()).unwrap(),
-            "for=192.168.0.1;by=10.09.09.09,by=10.10.10.10;proto=http;for=10.12.12.12;host=10.13.13.13".parse().unwrap());
+            "by=10.10.10.10;proto=http;for=10.12.12.12;host=10.13.13.13,for=192.168.0.1;by=10.09.09.09".parse().unwrap());
 
         let remote = get_remote(&headers, &allowlist);
         assert_eq!(remote, Some("10.12.12.12".to_owned()));

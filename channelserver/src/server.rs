@@ -112,7 +112,10 @@ impl ChannelServer {
     ) -> Result<(), perror::HandlerError> {
         if let Some(participants) = self.channels.get_mut(channel) {
             // show's over, everyone go home.
-
+            // On the off chance that the user has sent a `"message":"^D"` (EOL) as
+            // the data record, close the connection. Normally, we use a message type
+            // to qualify the disconnect message. That still needs a message element,
+            // so we use `"^D"`. 
             if message.contains(&format!("\"message\":\"{}\"", EOL)) {
                 for (id, info) in participants {
                     if let Some(addr) = self.sessions.get(id) {
