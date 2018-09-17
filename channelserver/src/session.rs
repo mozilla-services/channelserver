@@ -8,6 +8,7 @@ use actix_web::ws;
 // use cadence::{StatsdClient, Counted};
 use maxminddb;
 use uuid::Uuid;
+use ipnet::IpNet;
 
 use logging;
 use meta::SenderData;
@@ -20,7 +21,7 @@ pub struct WsChannelSessionState {
     pub log: Addr<logging::MozLogger>,
     pub iploc: maxminddb::Reader,
     // pub metrics: StatsdClient,
-    pub proxy_allowlist: Vec<String>,
+    pub proxy_allowlist: Vec<IpNet>,
 }
 
 pub struct WsChannelSession {

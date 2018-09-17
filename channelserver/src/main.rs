@@ -26,6 +26,7 @@ extern crate uuid;
 extern crate slog_term;
 extern crate cadence;
 extern crate maxminddb;
+extern crate ipnet;
 
 use std::path::Path;
 use std::time::Instant;
@@ -120,13 +121,14 @@ fn main() {
     let server = Arbiter::start(|_| server::ChannelServer::default());
     let log = Arbiter::start(|_| logging::MozLogger::default());
     let msettings = settings.clone();
-    let mut allowlist: Vec<String> = Vec::new();
+    let mut allowlist: Vec<ipnet::IpNet> = Vec::new();
     // Add the list of known proxies.
-    if settings.proxy_allowlist.len() > 0 {
-        for mut proxy in settings.proxy_allowlist.split(",") {
+    if settings.known_proxy_list.len() > 0 {
+        for mut proxy in settings.known_proxy_list.split(",") {
             proxy = proxy.trim();
             if proxy.len() > 0 {
-                allowlist.push(proxy.to_owned());
+                let addr:ipnet::IpNet = proxy.parse().unwrap();
+                allowlist.push(addr);
             }
         }
     }

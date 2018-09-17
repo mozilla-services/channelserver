@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
+use std::net::IpAddr;
 
 use actix::Addr;
 use actix_web::{http, HttpRequest};
 use http::header::{self, HeaderName};
 use maxminddb::{self, geoip2::City, MaxMindDBError};
+use ipnet::{IpNet};
 
 use logging;
 use session::WsChannelSessionState;
@@ -143,10 +145,27 @@ fn get_ua(headers: &http::HeaderMap, log: Option<&Addr<logging::MozLogger>>) -> 
     None
 }
 
-fn get_remote(headers: &http::HeaderMap, allowlist: &[String]) -> Option<String> {
+fn check_address(proxy_list:&[IpNet], host:&str) -> Option<String> {
+    /// Return if an address is NOT part of the allow list
+    let test_addr: IpAddr = match host.parse() {
+        Ok(a) => a,
+        Err(err) => {
+            return None
+        }
+    };
+    for proxy_range in proxy_list {
+        if ! proxy_range.contains(&test_addr) {
+            return Some(host.to_owned())
+        }
+    }
+    None
+}
+
+fn get_remote(headers: &http::HeaderMap, proxy_list: &[IpNet]) -> Option<String> {
     // Actix determines the connection_info.remote() from the first entry in the
     // Forwarded then X-Fowarded-For then peer name. The problem is that any
     // of those could be multiple entries or may point to a known proxy.
+    //
     // Check the [FORWARDED](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) 
     // header first.
     // Forwarded is a comma separated set of sub-fields that indicate the prior connection. The
@@ -165,7 +184,7 @@ fn get_remote(headers: &http::HeaderMap, allowlist: &[String]) -> Option<String>
                 for el in set.split(';') {
                     let mut items = el.trim().splitn(2, '=');
                     if let Some(name) = items.next() {
-                        if let Some(val) = items.next() {
+                        if let Some(host) = items.next() {
                             // there are four qualified identifiers:
                             // by: the interface where the request came in.
                             // for: the client that initiated the request
@@ -173,8 +192,10 @@ fn get_remote(headers: &http::HeaderMap, allowlist: &[String]) -> Option<String>
                             // proto: the protocol.
                             // "for" is analagous to the value from X-Forwarded-For, but
                             // some argument could be made for using "host"
-                            if &name.to_lowercase() as &str == "for" && !allowlist.contains(&val.trim().to_owned()) {
-                                return Some(val.trim().to_owned());
+                            if &name.to_lowercase() as &str == "for" {
+                                if let Some(remote) = check_address(proxy_list, &host) {
+                                    return Some(remote);
+                                }
                             }
                         }
                     }
@@ -192,9 +213,9 @@ fn get_remote(headers: &http::HeaderMap, allowlist: &[String]) -> Option<String>
                 host_list.reverse();
                 for host_str in host_list {
                     let host = host_str.trim().to_owned();
-                    if !allowlist.contains(&host) {
-                        return Some(host);
-                    }
+                        if let Some(remote) = check_address(proxy_list, &host) {
+                            return Some(remote);
+                        }
                 }
             }
         }
@@ -442,14 +463,14 @@ mod test {
     fn test_get_remote() {
         let mut headers = actix_web::http::header::HeaderMap::new();
 
-        let allowlist = vec!["192.168.0.1".to_owned()];
+        let proxy_list:Vec<IpNet> = vec!("192.168.0.0/24".parse().unwrap());
 
         headers.insert(
             http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
             "10.10.10.10, 192.168.0.1".parse().unwrap(),
         );
 
-        let remote = get_remote(&headers, &allowlist);
+        let remote = get_remote(&headers, &proxy_list);
         assert_eq!(remote, Some("10.10.10.10".to_owned()));
 
         // Adding a header which should override the previous "success"
@@ -458,14 +479,14 @@ mod test {
             "10.11.11.11, 192.168.0.1".parse().unwrap(),
         );
 
-        let remote = get_remote(&headers, &allowlist);
+        let remote = get_remote(&headers, &proxy_list);
         assert_eq!(remote, Some("10.11.11.11".to_owned()));
 
         // Adding the Primary header
         headers.insert(http::header::HeaderName::from_lowercase("forwarded".as_bytes()).unwrap(),
             "by=10.10.10.10;proto=http;for=10.12.12.12;host=10.13.13.13,for=192.168.0.1;by=10.09.09.09".parse().unwrap());
 
-        let remote = get_remote(&headers, &allowlist);
+        let remote = get_remote(&headers, &proxy_list);
         assert_eq!(remote, Some("10.12.12.12".to_owned()));
     }
 }
