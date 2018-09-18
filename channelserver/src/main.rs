@@ -25,8 +25,8 @@ extern crate uuid;
 #[macro_use]
 extern crate slog_term;
 extern crate cadence;
-extern crate maxminddb;
 extern crate ipnet;
+extern crate maxminddb;
 
 use std::path::Path;
 use std::time::Instant;
@@ -121,14 +121,14 @@ fn main() {
     let server = Arbiter::start(|_| server::ChannelServer::default());
     let log = Arbiter::start(|_| logging::MozLogger::default());
     let msettings = settings.clone();
-    let mut allowlist: Vec<ipnet::IpNet> = Vec::new();
-    // Add the list of known proxies.
-    if settings.known_proxy_list.len() > 0 {
-        for mut proxy in settings.known_proxy_list.split(",") {
+    let mut trusted_list: Vec<ipnet::IpNet> = Vec::new();
+    // Add the list of trusted proxies.
+    if settings.trusted_proxy_list.len() > 0 {
+        for mut proxy in settings.trusted_proxy_list.split(",") {
             proxy = proxy.trim();
             if proxy.len() > 0 {
-                let addr:ipnet::IpNet = proxy.parse().unwrap();
-                allowlist.push(addr);
+                let addr: ipnet::IpNet = proxy.parse().unwrap();
+                trusted_list.push(addr);
             }
         }
     }
@@ -159,7 +159,7 @@ fn main() {
             log: log.clone(),
             iploc,
             // metrics,
-            proxy_allowlist: allowlist.clone(),
+            trusted_proxy_list: trusted_list.clone(),
         };
 
         build_app(App::with_state(state))
@@ -194,7 +194,7 @@ mod test {
                 log: log.clone(),
                 iploc,
                 // metrics,
-                proxy_allowlist: vec![],
+                trusted_proxy_list: vec![],
             }
         });
         srv.start(|app| {
@@ -270,9 +270,9 @@ mod test {
         reader1 = r;
         let link_addr = read(item.unwrap());
         println!("Connecting to {:?}", link_addr);
-        let (mut reader2, mut writer2) = srv.ws_at(&link_addr).unwrap();
+        let (reader2, mut writer2) = srv.ws_at(&link_addr).unwrap();
         let (item, r) = srv.execute(reader2.into_future()).unwrap();
-        reader2 = r;
+        //reader2 = r;
         let r2_addr = read(item.unwrap());
         println!("Connected to {:?}", r2_addr);
         assert_eq!(link_addr, r2_addr);
