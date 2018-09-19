@@ -1,3 +1,2 @@
 [workspace]
-#members = ["linkserver", "chatserver", "spake2_demo"]
-members = ["linkserver", "channelserver"]
+members = ["channelserver"]

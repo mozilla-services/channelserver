@@ -6,7 +6,7 @@ import json
 
 import psutil
 import websocket
-import websocket._abnf as abnf
+
 
 proc = None
 
@@ -47,7 +47,6 @@ class Config(object):
     host = "localhost"
     port = "8000"
     app_path = "../target/debug/channelserver"
-    max_data = "0"
 
     def base(self):
         return "{}://{}:{}".format(self.protocol, self.host, self.port)
@@ -85,62 +84,73 @@ def get_connection(opts):
 
 
 def simple_connection(opts):
+    print("#### Simple Connection")
     (alice, bob) = get_connection(opts)
     message = "Test message"
     alice.send(message)
     body = json.loads(bob.recv())
     assert message == body["message"]
     assert "sender" in body
-    print("ok")
+    print("===== ok")
 
 
 def full_exchange(opts):
+    print("#### Full Exchange")
     (alice, bob) = get_connection(opts)
     message = """intro message"""
     alice.send(message)
     assert message == json.loads(bob.recv())["message"], "Intro didn't match"
     # channelserv only deals with text currently
-    message = base64.b85encode(os.urandom(2000)).decode("utf8")
+    message = base64.b85encode(os.urandom(1024)).decode("utf8")
     alice.send(message)
-    bm = json.loads(bob.recv())
-    assert message == bm["message"], "Message didn't match"
-    print("ok")
+    reply = json.loads(bob.recv())
+    assert message == reply["message"], "Message didn't match"
+    print("===== ok")
 
 
-def max_data(opts, max_bytes=2048):
+def max_data(opts, max_bytes=3096):
+    print("#### Max Data")
     (alice, bob) = get_connection(opts)
     message = base64.b85encode(os.urandom(max_bytes)).decode("utf8")
     alice.send(message)
+    time.sleep(0.5)
+    # Call recv to hand the close packet.
+    bob.recv()
     assert bob.is_closed(), "Receiver did not close"
+    print("===== ok")
 
 
 def max_exchange(opts, max_exchange=5):
+    print("#### Max Exchange")
     (alice, bob) = get_connection(opts)
     for i in range(0, max_exchange):
         message = "This is message #{}".format(i)
         alice.send(message)
-        assert message == bob.recv(), "Message #{} failed".format(i)
+        reply = bob.recv()
+        if len(reply) == 0:
+            break
+        reply = json.loads(reply)
+        assert message == reply.get("message"), "Message #{} failed".format(i)
+    try:
+        # Try reading, ignoring an already closed socket.
+        bob.recv()
+    except websocket._exceptions.WebSocketConnectionClosedException:
+        pass
     assert bob.is_closed(), "Receiver did not close"
+    print("===== ok")
 
 
 def main():
     opts = Config()
     try:
-        setup(opts)
+        setup(opts, max_data="2048")
         simple_connection(opts)
         full_exchange(opts)
-    except Exception as ex:
-        print("ERR:: {}".format(ex))
-        raise
-    finally:
-        shutdown()
-    try:
-        setup(opts, max_data="200")
-        max_data(opts, 400)
+        max_data(opts, 3096)
         max_exchange(opts, 5)
         print("\n\n All tests passed")
     except Exception as ex:
-        print("ERR::", ex)
+        print("ERR:: {}".format(ex))
         raise
     finally:
         shutdown()
