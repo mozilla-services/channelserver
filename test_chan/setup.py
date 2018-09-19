@@ -31,7 +31,7 @@ setup(
     name="test_chan",
     version=__version__,
     packages=find_packages(),
-    description='Pairsona integration tester',
+    description='ChannelServer integration tester',
     long_description=README,
     classifiers=[
         "Topic :: Internet :: WWW/HTTP",
@@ -46,7 +46,7 @@ setup(
     keywords='test',
     author="JR Conlin",
     author_email="src+pairsona@jrconlin.com",
-    url='https://github.com/web-push-libs/pywebpush',
+    url='https://github.com/mozilla-services/channelserver/tree/master/test_chan',
     license="MPL2",
     test_suite="nose.collector",
     include_package_data=True,

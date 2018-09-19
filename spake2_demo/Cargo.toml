@@ -1,5 +1,5 @@
 [package]
-name = "pairsona_spake2"
+name = "spake2_demo"
 version = "0.0.1"
 authors = ["Ryan Kelly <rfkelly@mozilla.com"]
 

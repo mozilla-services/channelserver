@@ -1,7 +1,7 @@
 [package]
 name = "channelserver"
 version = "0.3.0"
-authors = ["jr conlin<me+src@jrconlin.com"]
+authors = ["jr conlin<src+pairsona@jrconlin.com"]
 
 [dependencies]
 config = "0.9.0"

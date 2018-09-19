@@ -1,4 +1,4 @@
-[![Build](https://travis-ci.org/mozilla-services/pairsona.svg?branch=master)](https://travis-ci.org/mozilla-services/pairsona)
+[![Build](https://travis-ci.org/mozilla-services/channelserver.svg?branch=master)](https://travis-ci.org/mozilla-services/channelserver)
 
 # SPAKE2 Pairing Demo
 

@@ -112,7 +112,7 @@ fn build_app(app: App<session::WsChannelSessionState>) -> App<session::WsChannel
 
 fn main() {
     let _ = env_logger::init();
-    let sys = actix::System::new("pairsona-server");
+    let sys = actix::System::new("channelserver");
 
     // Start chat server actor in separate thread
     let logger = logging::MozLogger::new();
