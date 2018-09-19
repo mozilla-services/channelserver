@@ -1,1 +1,1 @@
-cargo build --all --exclude=pairsona_spake2
+cargo build --all --exclude=spake2_demo

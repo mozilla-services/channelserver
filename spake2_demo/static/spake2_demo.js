@@ -233,7 +233,7 @@ function generatePairingCode() {
 }
 
 function pairAsConsumer(code) {
-  return Rust.pairsona_spake2.then(pairsona_spake2 => {
+  return Rust.spake2_demo.then(spake2_demo => {
     return new Promise((resolve, reject) => {
       let channel = bytesFromHex(code.split("-")[0])
       let pakePipe = new Pipe(bytesToUUID(channel), resp => {
@@ -242,7 +242,7 @@ function pairAsConsumer(code) {
           pakePipe.callback = null
           pakePipe.close()
           const { id, msg } = JSON.parse(resp)
-          let r = pairsona_spake2.oneshot(code, pakePipe.id, msg)
+          let r = spake2_demo.oneshot(code, pakePipe.id, msg)
           let myPipe = new Pipe(bytesToUUID(randomBytes(16)))
           return Pipe.send(id, JSON.stringify({
             id: myPipe.id,
@@ -256,21 +256,21 @@ function pairAsConsumer(code) {
         }).then(resolve, reject)
       })
     })
-  })  
+  })
 }
 
 function pairAsProvider(code) {
-  return Rust.pairsona_spake2.then(pairsona_spake2 => {
+  return Rust.spake2_demo.then(spake2_demo => {
     return new Promise((resolve, reject) => {
       let channel = bytesFromHex(code.split("-")[0])
       let pakeId = bytesToUUID(channel)
-      let msg1 = pairsona_spake2.start(code, pakeId)
+      let msg1 = spake2_demo.start(code, pakeId)
       let myPipe = new Pipe(bytesToUUID(randomBytes(16)), resp => {
         Promise.resolve().then(() => {
           if (!resp) { throw new Error("pairing setup failed") }
           myPipe.callback = null
           const { id, msg } = JSON.parse(resp)
-          let key = pairsona_spake2.finish(code, msg)
+          let key = spake2_demo.finish(code, msg)
           return resolve(new PairedChannel(key, myPipe, id))
         }).then(resolve, reject)
       })

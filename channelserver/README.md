@@ -1,4 +1,4 @@
-# Simple websocket pairsona server
+# Simple websocket channel server
 
 ## Config options:
 
