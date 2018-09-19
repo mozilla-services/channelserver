@@ -4,7 +4,7 @@
 # ChannelServer
 
 A project to make Firefox Account log-in, pairing and sync easier
-between devices and applications devices or applications.
+between devices or applications.
 
 Contains:
 
