@@ -233,6 +233,7 @@ dependencies = [
  "env_logger 0.5.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "failure 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ipnet 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "maxminddb 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.5.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.72 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -616,6 +617,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "ipnet"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "isatty"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -690,19 +696,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "linked-hash-map"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "linkserver"
-version = "0.1.0"
-dependencies = [
- "actix 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "actix-web 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand 0.5.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde 1.0.72 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_derive 1.0.72 (registry+https://github.com/rust-lang/crates.io-index)",
- "uuid 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "lock_api"
@@ -1792,6 +1785,7 @@ dependencies = [
 "checksum indexmap 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "08173ba1e906efb6538785a8844dd496f5d34f0a2d88038e95195172fc667220"
 "checksum iovec 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "dbe6e417e7d0975db6512b90796e8ce223145ac4e33c377e4a42882a0e88bb08"
 "checksum ipconfig 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)" = "fccb81dd962b29a25de46c4f46e497b75117aa816468b6fff7a63a598a192394"
+"checksum ipnet 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e61c2da0d0f700c77d2d313dbf4f93e41d235fa12c6681fee06621036df4c2af"
 "checksum isatty 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)" = "6c324313540cd4d7ba008d43dc6606a32a5579f13cc17b2804c13096f0a5c522"
 "checksum itoa 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "5adb58558dcd1d786b5f0bd15f3226ee23486e24b7b58304b60f64dc68e62606"
 "checksum kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7507624b29483431c0ba2d82aece8ca6cdba9382bff4ddd0f7490560c056098d"

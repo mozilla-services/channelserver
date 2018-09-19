@@ -9,12 +9,15 @@ See `src/settings.rs` for defaults.
 
 ## GeoIP lookup
 This product includes GeoLite2 data created by MaxMind, available from
-[http://www.maxmind.com](http://www.maxmind.com).
+[https://www.maxmind.com](https://www.maxmind.com).
 
 This will require a [maxmind GeoIP](https://dev.maxmind.com/geoip/geoip2/geolite2/) lookup database. This presumes that
 the database will be in `mmdb/latest/GeoLite2-City.mmdb`. Use the
 `mmdb_loc` to specify a different path (*Note:* if running in the debugger,
 you may need to create a symlink under `target/debug`.)
+
+If desired the `fetch_mmdb.bash` script will fetch and install the
+latest copy of the GeoLite2 db.
 
 ## Compile and run:
 

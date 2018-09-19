@@ -1,10 +1,14 @@
 use std::collections::BTreeMap;
+use std::net::{IpAddr, SocketAddr};
 
 use actix::Addr;
 use actix_web::{http, HttpRequest};
+use http::header::HeaderName;
+use ipnet::IpNet;
 use maxminddb::{self, geoip2::City, MaxMindDBError};
 
 use logging;
+use perror::{HandlerError, HandlerErrorKind};
 use session::WsChannelSessionState;
 
 // Sender meta data, drawn from the HTTP Headers of the connection counterpart.
@@ -76,6 +80,7 @@ fn get_preferred_language_element(
     None
 }
 
+#[allow(unreachable_patterns)]
 fn handle_city_err(log: Option<&Addr<logging::MozLogger>>, err: &MaxMindDBError) {
     match err {
         maxminddb::MaxMindDBError::InvalidDatabaseError(s) => log.map(|l| {
@@ -108,6 +113,7 @@ fn handle_city_err(log: Option<&Addr<logging::MozLogger>>, err: &MaxMindDBError)
                 msg: format!("Could not find address for IP: {:?}", s),
             })
         }),
+        // include to future proof against cross compile dependency errors
         _ => log.map(|l| {
             l.do_send(logging::LogMessage {
                 level: logging::ErrorLevel::Error,
@@ -140,6 +146,71 @@ fn get_ua(headers: &http::HeaderMap, log: Option<&Addr<logging::MozLogger>>) -> 
         return Some(ua);
     }
     None
+}
+
+fn is_trusted_proxy(proxy_list: &[IpNet], host: &str) -> Result<bool, HandlerError> {
+    // Return if an address is NOT part of the allow list
+    let test_addr: IpAddr = match host.parse() {
+        Ok(addr) => addr,
+        Err(e) => return Err(HandlerErrorKind::BadRemoteAddrError(format!("{:?}", e)).into()),
+    };
+    for proxy_range in proxy_list {
+        if proxy_range.contains(&test_addr) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn get_remote(
+    peer: &Option<SocketAddr>,
+    headers: &http::HeaderMap,
+    proxy_list: &[IpNet],
+) -> Result<String, HandlerError> {
+    // Actix determines the connection_info.remote() from the first entry in the
+    // Forwarded then X-Fowarded-For, Forwarded-For, then peer name. The problem is that any
+    // of those could be multiple entries or may point to a known proxy, or be injected by the
+    // user. We strictly only check the one header we know the proxy will be sending, working
+    // our way back up the proxy chain until we find the first unexpected address.
+    // This may be an intermediary proxy, or it may be the original requesting system.
+    //
+    if peer.is_none() {
+        return Err(HandlerErrorKind::BadRemoteAddrError("Peer is unspecified".to_owned()).into());
+    }
+    let peer_ip = peer.unwrap().ip().to_string();
+    // if the peer is not a known proxy, ignore the X-Forwarded-For headers
+    if !is_trusted_proxy(proxy_list, &peer_ip)? {
+        return Ok(peer_ip);
+    }
+
+    // The peer is a known proxy, so take rightmost X-Forwarded-For that is not a trusted proxy.
+    match headers.get(HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap()) {
+        Some(header) => {
+            match header.to_str() {
+                Ok(hstr) => {
+                    // successive proxies are appeneded to this header.
+                    let mut host_list: Vec<&str> = hstr.split(',').collect();
+                    host_list.reverse();
+                    for host_str in host_list {
+                        let host = host_str.trim().to_owned();
+                        if !is_trusted_proxy(proxy_list, &host)? {
+                            return Ok(host.to_owned());
+                        }
+                    }
+                    Err(HandlerErrorKind::BadRemoteAddrError(format!(
+                        "Could not find remote IP in X-Forwarded-For"
+                    )).into())
+                }
+                Err(err) => Err(HandlerErrorKind::BadRemoteAddrError(format!(
+                    "Unknown address in X-Forwarded-For: {:?}",
+                    err
+                )).into()),
+            }
+        }
+        None => Err(HandlerErrorKind::BadRemoteAddrError(format!(
+            "No X-Forwarded-For found for proxied connection"
+        )).into()),
+    }
 }
 
 fn get_location(
@@ -264,7 +335,21 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
         };
         // parse user-header for platform info
         sender.ua = get_ua(&headers, Some(&log));
-        sender.remote = req.connection_info().remote().map(|rem| rem.to_owned());
+        // Ideally, this would just get &req. For testing, I'm passing in the values.
+        sender.remote = match get_remote(
+            &req.peer_addr(),
+            &req.headers(),
+            &req.state().trusted_proxy_list,
+        ) {
+            Ok(addr) => Some(addr),
+            Err(err) => {
+                log.do_send(logging::LogMessage {
+                    level: logging::ErrorLevel::Error,
+                    msg: format!("{:?}", err),
+                });
+                None
+            }
+        };
         get_location(&mut sender, &langs, Some(&log), &req.state().iploc);
         sender
     }
@@ -273,8 +358,9 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
 #[cfg(test)]
 mod test {
     use super::*;
+    use actix_web;
     use std::collections::BTreeMap;
-    
+
     use http;
 
     #[test]
@@ -331,23 +417,113 @@ mod test {
         let good_header = "Mozilla/5.0 Foo";
         let blank_header = "";
         let mut good_headers = http::HeaderMap::new();
-        good_headers.insert(http::header::USER_AGENT, http::header::HeaderValue::from_static(good_header));
+        good_headers.insert(
+            http::header::USER_AGENT,
+            http::header::HeaderValue::from_static(good_header),
+        );
         assert_eq!(Some(good_header.to_owned()), get_ua(&good_headers, None));
         let mut blank_headers = http::HeaderMap::new();
-        blank_headers.insert(http::header::USER_AGENT, http::header::HeaderValue::from_static(blank_header));
+        blank_headers.insert(
+            http::header::USER_AGENT,
+            http::header::HeaderValue::from_static(blank_header),
+        );
         assert_eq!(None, get_ua(&blank_headers, None));
         let empty_headers = http::HeaderMap::new();
         assert_eq!(None, get_ua(&empty_headers, None));
     }
 
-    #[ignore]
     #[test]
-    fn test_location() {
+    fn test_location_good() {
         let test_ip = "63.245.208.195"; // Mozilla
 
         let langs = vec!["en".to_owned()];
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
+        let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
+        get_location(&mut sender, &langs, None, &iploc);
+        assert_eq!(sender.city, Some("Sacramento".to_owned()));
+        assert_eq!(sender.region, Some("California".to_owned()));
+        assert_eq!(sender.country, Some("United States".to_owned()));
+    }
+
+    #[test]
+    fn test_location_bad() {
+        let test_ip = "192.168.1.1";
+
+        let langs = vec!["en".to_owned()];
+        let mut sender = SenderData::default();
+        sender.remote = Some(test_ip.to_owned());
+        // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
+        let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
+        get_location(&mut sender, &langs, None, &iploc);
+        assert_eq!(sender.city, None);
+        assert_eq!(sender.region, None);
+        assert_eq!(sender.country, None);
+    }
+
+    #[test]
+    fn test_get_remote() {
+        let mut headers = actix_web::http::header::HeaderMap::new();
+        let mut bad_headers = actix_web::http::header::HeaderMap::new();
+
+        let empty_headers = actix_web::http::header::HeaderMap::new();
+
+        let proxy_list: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+
+        let true_remote: SocketAddr = "1.2.3.4:0".parse().unwrap();
+        let proxy_server: SocketAddr = "192.168.0.4:0".parse().unwrap();
+
+        bad_headers.insert(
+            http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
+            "".parse().unwrap(),
+        );
+
+        // Proxy only, no XFF header
+        let remote = get_remote(&Some(proxy_server), &empty_headers, &proxy_list);
+        assert!(remote.is_err());
+
+        //Proxy only, bad XFF header
+        let remote = get_remote(&Some(proxy_server), &bad_headers, &proxy_list);
+        assert!(remote.is_err());
+
+        //Proxy only, crap XFF header
+        bad_headers.insert(
+            http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
+            "invalid".parse().unwrap(),
+        );
+        let remote = get_remote(&Some(proxy_server), &bad_headers, &proxy_list);
+        assert!(remote.is_err());
+
+        // Peer only, no header
+        let remote = get_remote(&Some(true_remote), &empty_headers, &proxy_list);
+        assert_eq!(remote.unwrap(), "1.2.3.4".to_owned());
+
+        headers.insert(
+            http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
+            "1.2.3.4, 192.168.0.4".parse().unwrap(),
+        );
+
+        // Peer proxy, fetch from XFF header
+        let remote = get_remote(&Some(proxy_server), &headers, &proxy_list);
+        assert_eq!(remote.unwrap(), "1.2.3.4".to_owned());
+
+        // Peer proxy, ensure right most XFF client fetched
+        headers.insert(
+            http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
+            "1.2.3.4, 2.3.4.5".parse().unwrap(),
+        );
+
+        let remote = get_remote(&Some(proxy_server), &headers, &proxy_list);
+        assert_eq!(remote.unwrap(), "2.3.4.5".to_owned());
+
+        // Peer proxy, ensure right most non-proxy XFF client fetched
+        headers.insert(
+            http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
+            "1.2.3.4, 2.3.4.5, 192.168.0.10".parse().unwrap(),
+        );
+
+        let remote = get_remote(&Some(proxy_server), &headers, &proxy_list);
+        assert_eq!(remote.unwrap(), "2.3.4.5".to_owned());
     }
 }

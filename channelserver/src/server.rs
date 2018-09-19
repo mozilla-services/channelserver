@@ -20,9 +20,15 @@ use settings::Settings;
 
 pub const EOL: &'static str = "\x04";
 
+#[derive(Serialize, Debug, PartialEq)]
+pub enum MessageType {
+    Text,
+    Terminate,
+}
+
 /// Chat server sends this messages to session
 #[derive(Message)]
-pub struct TextMessage(pub String);
+pub struct TextMessage(pub MessageType, pub String);
 
 /// Message for chat server communications
 /// Individual session identifier
@@ -49,6 +55,8 @@ pub struct Disconnect {
 pub struct ClientMessage {
     /// Id of the client session
     pub id: SessionId,
+    // Type of message being sent
+    pub message_type: MessageType,
     /// Peer message
     pub message: String,
     /// channel name
@@ -104,10 +112,15 @@ impl ChannelServer {
     ) -> Result<(), perror::HandlerError> {
         if let Some(participants) = self.channels.get_mut(channel) {
             // show's over, everyone go home.
-            if message == EOL {
+            // On the off chance that the user has sent a `"message":"^D"` (EOL) as
+            // the data record, close the connection. Normally, we use a message type
+            // to qualify the disconnect message. That still needs a message element,
+            // so we use `"^D"`.
+            if message.contains(&format!("\"message\":\"{}\"", EOL)) {
                 for (id, info) in participants {
                     if let Some(addr) = self.sessions.get(id) {
-                        addr.do_send(TextMessage(EOL.to_owned())).unwrap_or(());
+                        addr.do_send(TextMessage(MessageType::Terminate, EOL.to_owned()))
+                            .ok();
                     }
                 }
                 return Err(perror::HandlerErrorKind::ShutdownErr.into());
@@ -141,7 +154,8 @@ impl ChannelServer {
                 }
                 if party.id != skip_id {
                     if let Some(addr) = self.sessions.get(&party.id) {
-                        addr.do_send(TextMessage(message.to_owned())).unwrap_or(());
+                        addr.do_send(TextMessage(MessageType::Text, message.to_owned()))
+                            .ok();
                     }
                 } else {
                 }
@@ -158,7 +172,8 @@ impl ChannelServer {
             for (id, info) in participants {
                 if let Some(addr) = self.sessions.get(&id) {
                     // send a control message to force close
-                    addr.do_send(TextMessage(EOL.to_owned())).unwrap_or(());
+                    addr.do_send(TextMessage(MessageType::Terminate, EOL.to_owned()))
+                        .ok();
                 }
                 self.sessions.remove(&id);
             }
@@ -229,7 +244,8 @@ impl Handler<Connect> for ChannelServer {
         }
         // tell the client what their channel is.
         let jpath = json!({ "link": format!("/v1/ws/{}", chan_id) });
-        &msg.addr.do_send(TextMessage(jpath.to_string()));
+        &msg.addr
+            .do_send(TextMessage(MessageType::Text, jpath.to_string()));
 
         // send id back
         session_id
@@ -256,8 +272,8 @@ impl Handler<ClientMessage> for ChannelServer {
     type Result = ();
 
     fn handle(&mut self, msg: ClientMessage, _: &mut Context<Self>) {
-        if &msg.message == "\x04" {
-            self.shutdown(&msg.channel)
+        if &msg.message_type == &MessageType::Terminate || &msg.message == EOL {
+            return self.shutdown(&msg.channel);
         }
         if self
             .send_message(

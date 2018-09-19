@@ -23,18 +23,16 @@ pub enum HandlerErrorKind {
     XSDataErr,
     #[fail(display = "Excess Messages")]
     XSMessageErr,
-    #[fail(display = "Too many connections requested")]
-    XSConnectionErr,
     #[fail(display = "Connection Expired")]
     ExpiredErr,
     #[fail(display = "Channel Shutdown Requested")]
     ShutdownErr,
-    #[fail(display = "Error with GeoIP Database: {:?}", _0)]
-    GeoIPError(String),
     #[fail(display = "IO Error: {:?}", _0)]
     IOError(String),
     #[fail(display = "Could not start metrics: {:?}", _0)]
     MetricsError(String),
+    #[fail(display = "Bad remote address: {:?}", _0)]
+    BadRemoteAddrError(String),
 }
 
 /*
