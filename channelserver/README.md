@@ -8,7 +8,6 @@ Options can be set as ENV vars (prefixed with "`PAIR_`", e.g.
 See `src/settings.rs` for defaults.
 
 ## GeoIP lookup
-
 This product includes GeoLite2 data created by MaxMind, available from
 [https://www.maxmind.com](https://www.maxmind.com).
 

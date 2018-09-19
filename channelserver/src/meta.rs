@@ -188,7 +188,7 @@ fn get_remote(
         Some(header) => {
             match header.to_str() {
                 Ok(hstr) => {
-                    // Just like `Forward` successive proxies are appeneded to this header.
+                    // successive proxies are appeneded to this header.
                     let mut host_list: Vec<&str> = hstr.split(',').collect();
                     host_list.reverse();
                     for host_str in host_list {

@@ -10,15 +10,11 @@ RUN \
     rustup default ${RUST_TOOLCHAIN} && \
     cargo --version && \
     rustc --version && \
+    /bin/bash /app/channelserver/fetch_mmdb.bash && \
     mkdir -m 755 bin && \
     cargo build --release && \
     cp /app/target/release/channelserver /app/bin && \
-    cp /app/channelserver/version.json /app && \
-    cp /app/channelserver/fetch_mmdb.bash /app
-
-
-# Fetch the mmdb database
-RUN /bin/bash /app/fetch_mmdb.bash
+    cp /app/channelserver/version.json /app
 
 FROM debian:stretch-slim
 # FROM debian:stretch  # for debugging docker build
