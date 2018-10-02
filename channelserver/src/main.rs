@@ -15,7 +15,6 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate tokio_core;
 extern crate tokio_io;
-
 #[macro_use]
 extern crate actix;
 extern crate actix_web;
@@ -27,15 +26,17 @@ extern crate slog_term;
 extern crate cadence;
 extern crate ipnet;
 extern crate maxminddb;
+extern crate reqwest;
 
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use actix::Arbiter;
 use actix_web::server::HttpServer;
 use actix_web::{fs, http, ws, App, Error, HttpRequest, HttpResponse};
 use uuid::Uuid;
 
+mod ip_rate_limit;
 mod logging;
 mod meta;
 mod perror;
@@ -58,7 +59,7 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
         Uuid::parse_str(path.pop().unwrap_or_else(|| "")).unwrap_or_else(|_| Uuid::new_v4());
     &req.state().log.do_send(logging::LogMessage {
         level: logging::ErrorLevel::Info,
-        msg: format!("Creating session for channel: \"{}\"", channel.simple()),
+        msg: format!("Creating session for channel: \"{}\"", channel.to_simple()),
     });
     let meta_info = meta::SenderData::from(req.clone());
 
@@ -67,8 +68,8 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
         session::WsChannelSession {
             id: 0,
             hb: Instant::now(),
+            expiry: Instant::now() + Duration::from_secs(req.state().connection_lifespan),
             channel: channel,
-            name: None,
             meta: meta_info,
         },
     )
@@ -96,13 +97,19 @@ fn show_version(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Htt
 
 fn build_app(app: App<session::WsChannelSessionState>) -> App<session::WsChannelSessionState> {
     let mut mapp = app
-            // websocket to an existing channel
-            .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
-            // connecting to an empty channel creates a new one.
-            .resource("/v1/ws/", |r| r.route().f(channel_route))
-            .resource("/__version__", |r| r.method(http::Method::GET).f(show_version))
-            .resource("/__heartbeat__", |r| r.method(http::Method::GET).f(heartbeat))
-            .resource("/__lbheartbeat__", |r| r.method(http::Method::GET).f(lbheartbeat));
+        // websocket to an existing channel
+        .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
+        // connecting to an empty channel creates a new one.
+        .resource("/v1/ws/", |r| r.route().f(channel_route))
+        .resource("/__version__", |r| {
+            r.method(http::Method::GET).f(show_version)
+        })
+        .resource("/__heartbeat__", |r| {
+            r.method(http::Method::GET).f(heartbeat)
+        })
+        .resource("/__lbheartbeat__", |r| {
+            r.method(http::Method::GET).f(lbheartbeat)
+        });
     // Only add a static handler if the static directory exists.
     if Path::new("static/").exists() {
         mapp = mapp.handler("/static/", fs::StaticFiles::new("static/").unwrap());
@@ -122,6 +129,7 @@ fn main() {
     let log = Arbiter::start(|_| logging::MozLogger::default());
     let msettings = settings.clone();
     let mut trusted_list: Vec<ipnet::IpNet> = Vec::new();
+    let ip_rep = ip_rate_limit::IPReputation::from(&settings);
     // Add the list of trusted proxies.
     if settings.trusted_proxy_list.len() > 0 {
         for mut proxy in settings.trusted_proxy_list.split(",") {
@@ -142,6 +150,8 @@ fn main() {
         return;
     };
     let db_loc = settings.mmdb_loc.clone();
+    let connection_lifespan = settings.conn_lifespan;
+    let client_timeout = settings.client_timeout;
     // Create Http server with websocket support
     HttpServer::new(move || {
         /*
@@ -160,12 +170,16 @@ fn main() {
             iploc,
             // metrics,
             trusted_proxy_list: trusted_list.clone(),
+            ip_rep: Some(ip_rep.clone()),
+            connection_lifespan,
+            client_timeout,
         };
 
         build_app(App::with_state(state))
-    }).bind(&addr)
-        .unwrap()
-        .start();
+    })
+    .bind(&addr)
+    .unwrap()
+    .start();
 
     info!(logger.log, "Started http server: {}\n{:?}", addr, settings);
     let _ = sys.run();
@@ -187,6 +201,8 @@ mod test {
             let server = Arbiter::start(|_| server::ChannelServer::default());
             let log = Arbiter::start(|_| logging::MozLogger::default());
             let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
+            let settings = settings::Settings::new().ok().unwrap();
+            let ip_rep = ip_rate_limit::IPReputation::from(&settings);
             // let metrics = StatsdClient::builder("autopush", NopMetricSink).build();
 
             session::WsChannelSessionState {
@@ -195,22 +211,30 @@ mod test {
                 iploc,
                 // metrics,
                 trusted_proxy_list: vec![],
+                ip_rep: Some(ip_rep),
+                connection_lifespan: 60,
+                client_timeout: 30,
             }
         });
         srv.start(|app| {
             // Make this a trait eventually, for now, just copy build_app
-            app
-                .resource("/", |r| r.method(http::Method::GET).f(|_| {
-                    HttpResponse::NotFound()
-                        .finish()
-                }))
-                // websocket to an existing channel
-                .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
-                // connecting to an empty channel creates a new one.
-                .resource("/v1/ws/", |r| r.route().f(channel_route))
-                .resource("/__version__", |r| r.method(http::Method::GET).f(show_version))
-                .resource("/__heartbeat__", |r| r.method(http::Method::GET).f(heartbeat))
-                .resource("/__lbheartbeat__", |r| r.method(http::Method::GET).f(lbheartbeat));
+            app.resource("/", |r| {
+                r.method(http::Method::GET)
+                    .f(|_| HttpResponse::NotFound().finish())
+            })
+            // websocket to an existing channel
+            .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
+            // connecting to an empty channel creates a new one.
+            .resource("/v1/ws/", |r| r.route().f(channel_route))
+            .resource("/__version__", |r| {
+                r.method(http::Method::GET).f(show_version)
+            })
+            .resource("/__heartbeat__", |r| {
+                r.method(http::Method::GET).f(heartbeat)
+            })
+            .resource("/__lbheartbeat__", |r| {
+                r.method(http::Method::GET).f(lbheartbeat)
+            });
         })
     }
 

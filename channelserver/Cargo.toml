@@ -4,32 +4,34 @@ version = "0.3.0"
 authors = ["jr conlin<src+pairsona@jrconlin.com"]
 
 [dependencies]
-config = "0.9.0"
+config = "0.9"
 failure = "0.1"
-rand = "*"
+rand = "0.5"
 bytes = "0.4"
 byteorder = "1.2"
 futures = "0.1"
 tokio-io = "0.1"
 tokio-core = "0.1"
-env_logger = "*"
+env_logger = "0.5"
 
-serde = "1.0"
-serde_json = "1.0"
-uuid = { version = "0.6", features = ["serde", "v4"] }
+uuid = { version = "0.7", features = ["serde", "v4"] }
 uap-rust = "0.0.4"
 
 cadence = "0.15.1"
-slog = {version="2.3", features=["release_max_level_debug"]}
+slog = {version="2.4", features=["release_max_level_debug"]}
 slog-async = "2.3.0"
 slog-json = "2.2.0"
 slog-scope = "4.0.1"
 slog-stdlog = "3.0.2"
 slog-term = "2.4.0"
+serde = "1.0"
 serde_derive = "1.0"
+serde_json = "1.0"
 
 actix = "0.7"
 actix-web = "0.7"
+
+reqwest = "0.9"
 
 maxminddb = "0.10.0"
 ipnet = "2.0"

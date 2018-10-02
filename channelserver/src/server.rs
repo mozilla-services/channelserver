@@ -2,9 +2,9 @@
 //! And manages available channels. Peers send messages to other peers in same
 //! channel through `ChannelServer`.
 
-// use std::sync::{Arc, Mutex};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 use std::time::Instant;
 
 use actix::prelude::{Actor, Context, Handler, Recipient};
@@ -15,6 +15,7 @@ use uuid::Uuid;
 use logging::MozLogger;
 use meta;
 // use metrics;
+use ip_rate_limit;
 use perror;
 use settings::Settings;
 
@@ -24,6 +25,27 @@ pub const EOL: &'static str = "\x04";
 pub enum MessageType {
     Text,
     Terminate,
+}
+
+#[derive(Serialize, Debug, PartialEq, PartialOrd)]
+pub enum DisconnectReason {
+    None,
+    ConnectionError,
+    Timeout,
+}
+
+impl fmt::Display for DisconnectReason {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                DisconnectReason::None => "Normal reason",
+                DisconnectReason::ConnectionError => "Connection Error",
+                DisconnectReason::Timeout => "Connection Timeout",
+            }
+        )
+    }
 }
 
 /// Chat server sends this messages to session
@@ -41,6 +63,7 @@ pub type ChannelId = usize;
 pub struct Connect {
     pub addr: Recipient<TextMessage>,
     pub channel: Uuid,
+    pub remote: Option<String>,
 }
 
 /// Session is disconnected
@@ -48,6 +71,7 @@ pub struct Connect {
 pub struct Disconnect {
     pub channel: Uuid,
     pub id: SessionId,
+    pub reason: DisconnectReason,
 }
 
 /// Send message to specific channel
@@ -63,6 +87,8 @@ pub struct ClientMessage {
     pub channel: Uuid,
     /// Sender info
     pub sender: meta::SenderData,
+    /// Abuse reporting system
+    pub abuser: Option<ip_rate_limit::IPReputation>,
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]
@@ -71,6 +97,7 @@ pub struct Channel {
     pub started: Instant,
     pub msg_count: u8,
     pub data_exchanged: usize,
+    pub remote: Option<String>,
 }
 
 /// `ChannelServer` manages chat channels and responsible for coordinating chat
@@ -84,6 +111,7 @@ pub struct ChannelServer {
     log: MozLogger,
     pub settings: RefCell<Settings>,
     // pub metrics: RefCell<StatsdClient>,
+    ip_rep: Option<ip_rate_limit::IPReputation>,
 }
 
 impl Default for ChannelServer {
@@ -97,6 +125,7 @@ impl Default for ChannelServer {
             rng: RefCell::new(rand::thread_rng()),
             log: logger.clone(),
             settings: RefCell::new(settings.clone()),
+            ip_rep: Some(ip_rate_limit::IPReputation::from(&settings)),
             // metrics: RefCell::new(metrics.clone())
         }
     }
@@ -126,11 +155,6 @@ impl ChannelServer {
                 return Err(perror::HandlerErrorKind::ShutdownErr.into());
             }
             for party in participants.values_mut() {
-                if party.started.elapsed().as_secs() > self.settings.borrow().timeout {
-                    info!(self.log.log, "Connection {} expired, closing", channel);
-                    // self.metrics.borrow().incr("conn.max.time").ok();
-                    return Err(perror::HandlerErrorKind::ExpiredErr.into());
-                }
                 let max_data: usize = self.settings.borrow().max_data as usize;
                 let msg_len = message.len();
                 if max_data > 0 && (party.data_exchanged > max_data || msg_len > max_data) {
@@ -139,6 +163,11 @@ impl ChannelServer {
                         "Too much data sent through {}, closing", channel
                     );
                     // self.metrics.borrow().incr("conn.max.data").ok();
+                    if let Some(ref remote) = party.remote {
+                        if let Some(ref ip_rep) = self.ip_rep {
+                            ip_rep.add_abuser(&remote)?;
+                        }
+                    }
                     return Err(perror::HandlerErrorKind::XSDataErr.into());
                 }
                 party.data_exchanged += msg_len;
@@ -149,6 +178,11 @@ impl ChannelServer {
                         self.log.log,
                         "Too many messages through {}, closing", channel
                     );
+                    if let Some(ref remote) = party.remote {
+                        if let Some(ref ip_rep) = self.ip_rep {
+                            ip_rep.add_abuser(&remote)?;
+                        }
+                    }
                     // self.metrics.borrow().incr("conn.max.msg").ok();
                     return Err(perror::HandlerErrorKind::XSMessageErr.into());
                 }
@@ -202,15 +236,16 @@ impl Handler<Connect> for ChannelServer {
             started: Instant::now(),
             msg_count: 0,
             data_exchanged: 0,
+            remote: msg.remote,
         };
         self.sessions.insert(new_chan.id, msg.addr.clone());
         debug!(
             self.log.log,
             "New connection to {}: [{}]",
-            &msg.channel.simple(),
+            &msg.channel.to_simple(),
             &new_chan.id
         );
-        let chan_id = &msg.channel.simple();
+        let chan_id = &msg.channel.to_simple();
         {
             if !self.channels.contains_key(&msg.channel) {
                 debug!(
@@ -237,6 +272,15 @@ impl Handler<Connect> for ChannelServer {
                 );
                 self.sessions.remove(&new_chan.id);
                 // self.metrics.borrow().incr("conn.max.conn").ok();
+                // Add the abuser to the abuse table?
+                /*
+                    // Not sure if I should add this sort of abuse.
+                    // Might penalize legit attempts to connect that are
+                    // delayed.
+                if let Some(remote) = msg.remote {
+                    self.abuser.add_abuser(&remote);
+                }
+                */
                 return 0;
             }
             group.insert(session_id.clone(), new_chan);
@@ -259,9 +303,10 @@ impl Handler<Disconnect> for ChannelServer {
     fn handle(&mut self, msg: Disconnect, ctx: &mut Context<Self>) {
         debug!(
             self.log.log,
-            "Connection dropped for {} : {}",
-            &msg.channel.simple(),
-            &msg.id
+            "Connection dropped for {} : {} {}",
+            &msg.channel.to_simple(),
+            &msg.id,
+            &msg.reason,
         );
         self.shutdown(&msg.channel);
     }
@@ -281,7 +326,8 @@ impl Handler<ClientMessage> for ChannelServer {
                 &json!({
                     "message": &msg.message,
                     "sender": &msg.sender,
-                }).to_string(),
+                })
+                .to_string(),
                 msg.id,
             )
             .is_err()

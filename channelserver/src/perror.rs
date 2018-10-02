@@ -23,8 +23,6 @@ pub enum HandlerErrorKind {
     XSDataErr,
     #[fail(display = "Excess Messages")]
     XSMessageErr,
-    #[fail(display = "Connection Expired")]
-    ExpiredErr,
     #[fail(display = "Channel Shutdown Requested")]
     ShutdownErr,
     #[fail(display = "IO Error: {:?}", _0)]
@@ -33,6 +31,8 @@ pub enum HandlerErrorKind {
     MetricsError(String),
     #[fail(display = "Bad remote address: {:?}", _0)]
     BadRemoteAddrError(String),
+    #[fail(display = "Internal server error: {:?}", _0)]
+    InternalServerError(String),
 }
 
 /*

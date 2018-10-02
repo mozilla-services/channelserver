@@ -199,17 +199,20 @@ fn get_remote(
                     }
                     Err(HandlerErrorKind::BadRemoteAddrError(format!(
                         "Could not find remote IP in X-Forwarded-For"
-                    )).into())
+                    ))
+                    .into())
                 }
                 Err(err) => Err(HandlerErrorKind::BadRemoteAddrError(format!(
                     "Unknown address in X-Forwarded-For: {:?}",
                     err
-                )).into()),
+                ))
+                .into()),
             }
         }
         None => Err(HandlerErrorKind::BadRemoteAddrError(format!(
             "No X-Forwarded-For found for proxied connection"
-        )).into()),
+        ))
+        .into()),
     }
 }
 
