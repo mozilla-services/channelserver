@@ -10,6 +10,7 @@ use ipnet::IpNet;
 use maxminddb;
 use uuid::Uuid;
 
+use ip_rate_limit::IPReputation;
 use logging;
 use meta::SenderData;
 use server;
@@ -22,6 +23,7 @@ pub struct WsChannelSessionState {
     pub iploc: maxminddb::Reader,
     // pub metrics: StatsdClient,
     pub trusted_proxy_list: Vec<IpNet>,
+    pub ip_rep: Option<IPReputation>,
 }
 
 pub struct WsChannelSession {
@@ -48,13 +50,36 @@ impl Actor for WsChannelSession {
         // before processing any other events.
         // HttpContext::state() is instance of WsChatSessionState, state is shared
         // across all routes within application
-        let addr: Addr<Self> = ctx.address();
+
         self.meta = SenderData::from(ctx.request().clone());
+        //Check that the remote IP isn't abusive:
+        if let Some(remote) = self.meta.remote.clone() {
+            // TODO: bleh, fix this to not clone.
+            ctx.state()
+                .ip_rep
+                .clone()
+                .map(|abuser| match abuser.is_abusive(&remote) {
+                    Ok(false) => {}
+                    Ok(true) => {
+                        ctx.state().log.do_send(logging::LogMessage {
+                            level: logging::ErrorLevel::Info,
+                            msg: format!("Blocking abusive IP address: {:?}", remote),
+                        });
+                        ctx.stop()
+                    }
+                    Err(err) => ctx.state().log.do_send(logging::LogMessage {
+                        level: logging::ErrorLevel::Error,
+                        msg: format!("IPRep reported error: {:?}", err),
+                    }),
+                });
+        };
+        let addr: Addr<Self> = ctx.address();
         ctx.state()
             .addr
             .send(server::Connect {
                 addr: addr.recipient(),
                 channel: self.channel.clone(),
+                remote: self.meta.remote.clone(),
             })
             .into_actor(self)
             .then(|res, act, ctx| {
@@ -100,6 +125,7 @@ impl Actor for WsChannelSession {
                 message: server::EOL.to_owned(),
                 channel: self.channel.clone(),
                 sender: SenderData::default(),
+                abuser: None,
             });
         }
         Running::Stop
@@ -142,12 +168,13 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
                     message: m.to_owned(),
                     channel: self.channel.clone(),
                     sender: self.meta.clone(),
+                    abuser: ctx.state().ip_rep.clone(),
                 })
             }
             ws::Message::Binary(bin) => {
                 ctx.state().log.do_send(logging::LogMessage {
                     level: logging::ErrorLevel::Info,
-                    msg: format!("TODO: Binary format not yet supported"),
+                    msg: format!("TODO: Binary format not supported"),
                 });
             }
             ws::Message::Close(_) => {
