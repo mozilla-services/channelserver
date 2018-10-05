@@ -296,7 +296,6 @@ mod test {
         println!("Connecting to {:?}", link_addr);
         let (reader2, mut writer2) = srv.ws_at(&link_addr).unwrap();
         let (item, r) = srv.execute(reader2.into_future()).unwrap();
-        //reader2 = r;
         let r2_addr = read(item.unwrap());
         println!("Connected to {:?}", r2_addr);
         assert_eq!(link_addr, r2_addr);

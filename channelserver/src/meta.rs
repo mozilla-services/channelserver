@@ -486,11 +486,11 @@ mod test {
         let remote = get_remote(&Some(proxy_server), &empty_headers, &proxy_list);
         assert!(remote.is_err());
 
-        //Proxy only, bad XFF header
+        // Proxy only, bad XFF header
         let remote = get_remote(&Some(proxy_server), &bad_headers, &proxy_list);
         assert!(remote.is_err());
 
-        //Proxy only, crap XFF header
+        // Proxy only, crap XFF header
         bad_headers.insert(
             http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
             "invalid".parse().unwrap(),

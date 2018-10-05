@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+//TODO: replace this with actix::client
 use reqwest::{self, header};
+
 use serde_json::Value;
 
 use perror::{HandlerError, HandlerErrorKind};
@@ -16,8 +18,8 @@ pub struct IPReputation {
 
 impl<'a> From<&'a Settings> for IPReputation {
     fn from(settings: &'a Settings) -> Self {
-        let server = if settings.ip_abuse_server.len() > 0 {
-            Some(settings.ip_abuse_server.clone())
+        let server = if settings.ip_reputation_server.len() > 0 {
+            Some(settings.ip_reputation_server.clone())
         } else {
             None
         };

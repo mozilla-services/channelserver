@@ -61,13 +61,13 @@ impl Actor for WsChannelSession {
         self.hb(ctx);
 
         self.meta = SenderData::from(ctx.request().clone());
-        //Check that the remote IP isn't abusive:
+        // Check that the remote IP isn't abusive:
         if let Some(remote) = self.meta.remote.clone() {
             // TODO: bleh, fix this to not clone.
             ctx.state()
                 .ip_rep
                 .clone()
-                .map(|abuser| match abuser.is_abusive(&remote) {
+                .map(|ip_rep| match ip_rep.is_abusive(&remote) {
                     Ok(false) => {}
                     Ok(true) => {
                         ctx.state().log.do_send(logging::LogMessage {
@@ -134,7 +134,7 @@ impl Actor for WsChannelSession {
                 message: server::EOL.to_owned(),
                 channel: self.channel.clone(),
                 sender: SenderData::default(),
-                abuser: None,
+                ip_rep: None,
             });
         }
         Running::Stop
@@ -183,7 +183,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
                     message: m.to_owned(),
                     channel: self.channel.clone(),
                     sender: self.meta.clone(),
-                    abuser: ctx.state().ip_rep.clone(),
+                    ip_rep: ctx.state().ip_rep.clone(),
                 })
             }
             ws::Message::Binary(bin) => {

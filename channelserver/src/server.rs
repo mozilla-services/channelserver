@@ -88,7 +88,7 @@ pub struct ClientMessage {
     /// Sender info
     pub sender: meta::SenderData,
     /// Abuse reporting system
-    pub abuser: Option<ip_rate_limit::IPReputation>,
+    pub ip_rep: Option<ip_rate_limit::IPReputation>,
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]
@@ -272,15 +272,12 @@ impl Handler<Connect> for ChannelServer {
                 );
                 self.sessions.remove(&new_chan.id);
                 // self.metrics.borrow().incr("conn.max.conn").ok();
-                // Add the abuser to the abuse table?
-                /*
-                    // Not sure if I should add this sort of abuse.
-                    // Might penalize legit attempts to connect that are
-                    // delayed.
-                if let Some(remote) = msg.remote {
-                    self.abuser.add_abuser(&remote);
-                }
-                */
+                // It doesn't make sense to impose a high penalty for this
+                // behavior, but we may want to flag and log the origin
+                // IP for later analytics.
+                // We could also impose a tiny penalty on the IP (if possible)
+                // which would minimally impact accidental occurances, but
+                // add up for major infractors.
                 return 0;
             }
             group.insert(session_id.clone(), new_chan);
