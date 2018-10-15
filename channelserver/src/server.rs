@@ -40,7 +40,7 @@ impl fmt::Display for DisconnectReason {
             f,
             "{}",
             match self {
-                DisconnectReason::None => "Normal reason",
+                DisconnectReason::None => "Client Disconnect",
                 DisconnectReason::ConnectionError => "Connection Error",
                 DisconnectReason::Timeout => "Connection Timeout",
             }
