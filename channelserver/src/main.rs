@@ -36,7 +36,6 @@ use actix_web::server::HttpServer;
 use actix_web::{fs, http, ws, App, Error, HttpRequest, HttpResponse};
 use uuid::Uuid;
 
-mod ip_rate_limit;
 mod logging;
 mod meta;
 mod perror;
@@ -129,7 +128,6 @@ fn main() {
     let log = Arbiter::start(|_| logging::MozLogger::default());
     let msettings = settings.clone();
     let mut trusted_list: Vec<ipnet::IpNet> = Vec::new();
-    let ip_rep = ip_rate_limit::IPReputation::from(&settings);
     // Add the list of trusted proxies.
     if settings.trusted_proxy_list.len() > 0 {
         for mut proxy in settings.trusted_proxy_list.split(",") {
@@ -170,7 +168,6 @@ fn main() {
             iploc,
             // metrics,
             trusted_proxy_list: trusted_list.clone(),
-            ip_rep: Some(ip_rep.clone()),
             connection_lifespan,
             client_timeout,
         };
@@ -202,7 +199,6 @@ mod test {
             let log = Arbiter::start(|_| logging::MozLogger::default());
             let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
             let settings = settings::Settings::new().ok().unwrap();
-            let ip_rep = ip_rate_limit::IPReputation::from(&settings);
             // let metrics = StatsdClient::builder("autopush", NopMetricSink).build();
 
             session::WsChannelSessionState {
@@ -211,7 +207,6 @@ mod test {
                 iploc,
                 // metrics,
                 trusted_proxy_list: vec![],
-                ip_rep: Some(ip_rep),
                 connection_lifespan: 60,
                 client_timeout: 30,
             }

@@ -15,7 +15,6 @@ use uuid::Uuid;
 use logging::MozLogger;
 use meta;
 // use metrics;
-use ip_rate_limit;
 use perror;
 use settings::Settings;
 
@@ -87,8 +86,6 @@ pub struct ClientMessage {
     pub channel: Uuid,
     /// Sender info
     pub sender: meta::SenderData,
-    /// Abuse reporting system
-    pub ip_rep: Option<ip_rate_limit::IPReputation>,
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]
@@ -111,7 +108,6 @@ pub struct ChannelServer {
     log: MozLogger,
     pub settings: RefCell<Settings>,
     // pub metrics: RefCell<StatsdClient>,
-    ip_rep: Option<ip_rate_limit::IPReputation>,
 }
 
 impl Default for ChannelServer {
@@ -125,7 +121,6 @@ impl Default for ChannelServer {
             rng: RefCell::new(rand::thread_rng()),
             log: logger.clone(),
             settings: RefCell::new(settings.clone()),
-            ip_rep: Some(ip_rate_limit::IPReputation::from(&settings)),
             // metrics: RefCell::new(metrics.clone())
         }
     }
@@ -163,12 +158,11 @@ impl ChannelServer {
                         "Too much data sent through {}, closing", channel
                     );
                     // self.metrics.borrow().incr("conn.max.data").ok();
-                    if let Some(ref remote) = party.remote {
-                        if let Some(ref ip_rep) = self.ip_rep {
-                            ip_rep.add_abuser(&remote)?;
-                        }
+                    let mut remote = "";
+                    if let Some(ref rr) = party.remote {
+                        remote = rr;
                     }
-                    return Err(perror::HandlerErrorKind::XSDataErr.into());
+                    return Err(perror::HandlerErrorKind::XSDataErr(remote.to_owned()).into());
                 }
                 party.data_exchanged += msg_len;
                 let msg_count = u8::from(self.settings.borrow().max_exchanges);
@@ -178,20 +172,18 @@ impl ChannelServer {
                         self.log.log,
                         "Too many messages through {}, closing", channel
                     );
-                    if let Some(ref remote) = party.remote {
-                        if let Some(ref ip_rep) = self.ip_rep {
-                            ip_rep.add_abuser(&remote)?;
-                        }
+                    let mut remote = "";
+                    if let Some(ref rr) = party.remote {
+                        remote = rr;
                     }
                     // self.metrics.borrow().incr("conn.max.msg").ok();
-                    return Err(perror::HandlerErrorKind::XSMessageErr.into());
+                    return Err(perror::HandlerErrorKind::XSMessageErr(remote.to_owned()).into());
                 }
                 if party.id != skip_id {
                     if let Some(addr) = self.sessions.get(&party.id) {
                         addr.do_send(TextMessage(MessageType::Text, message.to_owned()))
                             .ok();
                     }
-                } else {
                 }
             }
         }
