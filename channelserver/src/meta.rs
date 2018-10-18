@@ -199,17 +199,20 @@ fn get_remote(
                     }
                     Err(HandlerErrorKind::BadRemoteAddrError(format!(
                         "Could not find remote IP in X-Forwarded-For"
-                    )).into())
+                    ))
+                    .into())
                 }
                 Err(err) => Err(HandlerErrorKind::BadRemoteAddrError(format!(
                     "Unknown address in X-Forwarded-For: {:?}",
                     err
-                )).into()),
+                ))
+                .into()),
             }
         }
         None => Err(HandlerErrorKind::BadRemoteAddrError(format!(
             "No X-Forwarded-For found for proxied connection"
-        )).into()),
+        ))
+        .into()),
     }
 }
 
@@ -483,11 +486,11 @@ mod test {
         let remote = get_remote(&Some(proxy_server), &empty_headers, &proxy_list);
         assert!(remote.is_err());
 
-        //Proxy only, bad XFF header
+        // Proxy only, bad XFF header
         let remote = get_remote(&Some(proxy_server), &bad_headers, &proxy_list);
         assert!(remote.is_err());
 
-        //Proxy only, crap XFF header
+        // Proxy only, crap XFF header
         bad_headers.insert(
             http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
             "invalid".parse().unwrap(),

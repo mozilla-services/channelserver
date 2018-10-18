@@ -19,12 +19,10 @@ pub struct HandlerError {
 
 #[derive(Clone, Eq, PartialEq, Debug, Fail)]
 pub enum HandlerErrorKind {
-    #[fail(display = "Excess Data Exchanged")]
-    XSDataErr,
-    #[fail(display = "Excess Messages")]
-    XSMessageErr,
-    #[fail(display = "Connection Expired")]
-    ExpiredErr,
+    #[fail(display = "Excess Data Exchanged: _0")]
+    XSDataErr(String),
+    #[fail(display = "Excess Messages: _0")]
+    XSMessageErr(String),
     #[fail(display = "Channel Shutdown Requested")]
     ShutdownErr,
     #[fail(display = "IO Error: {:?}", _0)]
@@ -33,6 +31,8 @@ pub enum HandlerErrorKind {
     MetricsError(String),
     #[fail(display = "Bad remote address: {:?}", _0)]
     BadRemoteAddrError(String),
+    #[fail(display = "Internal server error: {:?}", _0)]
+    InternalServerError(String),
 }
 
 /*

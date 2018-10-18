@@ -15,7 +15,6 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate tokio_core;
 extern crate tokio_io;
-
 #[macro_use]
 extern crate actix;
 extern crate actix_web;
@@ -27,9 +26,10 @@ extern crate slog_term;
 extern crate cadence;
 extern crate ipnet;
 extern crate maxminddb;
+extern crate reqwest;
 
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use actix::Arbiter;
 use actix_web::server::HttpServer;
@@ -58,7 +58,7 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
         Uuid::parse_str(path.pop().unwrap_or_else(|| "")).unwrap_or_else(|_| Uuid::new_v4());
     &req.state().log.do_send(logging::LogMessage {
         level: logging::ErrorLevel::Info,
-        msg: format!("Creating session for channel: \"{}\"", channel.simple()),
+        msg: format!("Creating session for channel: \"{}\"", channel.to_simple()),
     });
     let meta_info = meta::SenderData::from(req.clone());
 
@@ -67,8 +67,8 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
         session::WsChannelSession {
             id: 0,
             hb: Instant::now(),
+            expiry: Instant::now() + Duration::from_secs(req.state().connection_lifespan),
             channel: channel,
-            name: None,
             meta: meta_info,
         },
     )
@@ -96,13 +96,19 @@ fn show_version(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Htt
 
 fn build_app(app: App<session::WsChannelSessionState>) -> App<session::WsChannelSessionState> {
     let mut mapp = app
-            // websocket to an existing channel
-            .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
-            // connecting to an empty channel creates a new one.
-            .resource("/v1/ws/", |r| r.route().f(channel_route))
-            .resource("/__version__", |r| r.method(http::Method::GET).f(show_version))
-            .resource("/__heartbeat__", |r| r.method(http::Method::GET).f(heartbeat))
-            .resource("/__lbheartbeat__", |r| r.method(http::Method::GET).f(lbheartbeat));
+        // websocket to an existing channel
+        .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
+        // connecting to an empty channel creates a new one.
+        .resource("/v1/ws/", |r| r.route().f(channel_route))
+        .resource("/__version__", |r| {
+            r.method(http::Method::GET).f(show_version)
+        })
+        .resource("/__heartbeat__", |r| {
+            r.method(http::Method::GET).f(heartbeat)
+        })
+        .resource("/__lbheartbeat__", |r| {
+            r.method(http::Method::GET).f(lbheartbeat)
+        });
     // Only add a static handler if the static directory exists.
     if Path::new("static/").exists() {
         mapp = mapp.handler("/static/", fs::StaticFiles::new("static/").unwrap());
@@ -142,6 +148,8 @@ fn main() {
         return;
     };
     let db_loc = settings.mmdb_loc.clone();
+    let connection_lifespan = settings.conn_lifespan;
+    let client_timeout = settings.client_timeout;
     // Create Http server with websocket support
     HttpServer::new(move || {
         /*
@@ -160,12 +168,15 @@ fn main() {
             iploc,
             // metrics,
             trusted_proxy_list: trusted_list.clone(),
+            connection_lifespan,
+            client_timeout,
         };
 
         build_app(App::with_state(state))
-    }).bind(&addr)
-        .unwrap()
-        .start();
+    })
+    .bind(&addr)
+    .unwrap()
+    .start();
 
     info!(logger.log, "Started http server: {}\n{:?}", addr, settings);
     let _ = sys.run();
@@ -187,6 +198,7 @@ mod test {
             let server = Arbiter::start(|_| server::ChannelServer::default());
             let log = Arbiter::start(|_| logging::MozLogger::default());
             let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
+            let settings = settings::Settings::new().ok().unwrap();
             // let metrics = StatsdClient::builder("autopush", NopMetricSink).build();
 
             session::WsChannelSessionState {
@@ -195,22 +207,29 @@ mod test {
                 iploc,
                 // metrics,
                 trusted_proxy_list: vec![],
+                connection_lifespan: 60,
+                client_timeout: 30,
             }
         });
         srv.start(|app| {
             // Make this a trait eventually, for now, just copy build_app
-            app
-                .resource("/", |r| r.method(http::Method::GET).f(|_| {
-                    HttpResponse::NotFound()
-                        .finish()
-                }))
-                // websocket to an existing channel
-                .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
-                // connecting to an empty channel creates a new one.
-                .resource("/v1/ws/", |r| r.route().f(channel_route))
-                .resource("/__version__", |r| r.method(http::Method::GET).f(show_version))
-                .resource("/__heartbeat__", |r| r.method(http::Method::GET).f(heartbeat))
-                .resource("/__lbheartbeat__", |r| r.method(http::Method::GET).f(lbheartbeat));
+            app.resource("/", |r| {
+                r.method(http::Method::GET)
+                    .f(|_| HttpResponse::NotFound().finish())
+            })
+            // websocket to an existing channel
+            .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
+            // connecting to an empty channel creates a new one.
+            .resource("/v1/ws/", |r| r.route().f(channel_route))
+            .resource("/__version__", |r| {
+                r.method(http::Method::GET).f(show_version)
+            })
+            .resource("/__heartbeat__", |r| {
+                r.method(http::Method::GET).f(heartbeat)
+            })
+            .resource("/__lbheartbeat__", |r| {
+                r.method(http::Method::GET).f(lbheartbeat)
+            });
         })
     }
 
@@ -272,7 +291,6 @@ mod test {
         println!("Connecting to {:?}", link_addr);
         let (reader2, mut writer2) = srv.ws_at(&link_addr).unwrap();
         let (item, r) = srv.execute(reader2.into_future()).unwrap();
-        //reader2 = r;
         let r2_addr = read(item.unwrap());
         println!("Connected to {:?}", r2_addr);
         assert_eq!(link_addr, r2_addr);

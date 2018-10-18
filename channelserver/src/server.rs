@@ -2,9 +2,9 @@
 //! And manages available channels. Peers send messages to other peers in same
 //! channel through `ChannelServer`.
 
-// use std::sync::{Arc, Mutex};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 use std::time::Instant;
 
 use actix::prelude::{Actor, Context, Handler, Recipient};
@@ -26,6 +26,27 @@ pub enum MessageType {
     Terminate,
 }
 
+#[derive(Serialize, Debug, PartialEq, PartialOrd)]
+pub enum DisconnectReason {
+    None,
+    ConnectionError,
+    Timeout,
+}
+
+impl fmt::Display for DisconnectReason {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                DisconnectReason::None => "Client Disconnect",
+                DisconnectReason::ConnectionError => "Connection Error",
+                DisconnectReason::Timeout => "Connection Timeout",
+            }
+        )
+    }
+}
+
 /// Chat server sends this messages to session
 #[derive(Message)]
 pub struct TextMessage(pub MessageType, pub String);
@@ -41,6 +62,7 @@ pub type ChannelId = usize;
 pub struct Connect {
     pub addr: Recipient<TextMessage>,
     pub channel: Uuid,
+    pub remote: Option<String>,
 }
 
 /// Session is disconnected
@@ -48,6 +70,7 @@ pub struct Connect {
 pub struct Disconnect {
     pub channel: Uuid,
     pub id: SessionId,
+    pub reason: DisconnectReason,
 }
 
 /// Send message to specific channel
@@ -71,6 +94,7 @@ pub struct Channel {
     pub started: Instant,
     pub msg_count: u8,
     pub data_exchanged: usize,
+    pub remote: Option<String>,
 }
 
 /// `ChannelServer` manages chat channels and responsible for coordinating chat
@@ -126,11 +150,6 @@ impl ChannelServer {
                 return Err(perror::HandlerErrorKind::ShutdownErr.into());
             }
             for party in participants.values_mut() {
-                if party.started.elapsed().as_secs() > self.settings.borrow().timeout {
-                    info!(self.log.log, "Connection {} expired, closing", channel);
-                    // self.metrics.borrow().incr("conn.max.time").ok();
-                    return Err(perror::HandlerErrorKind::ExpiredErr.into());
-                }
                 let max_data: usize = self.settings.borrow().max_data as usize;
                 let msg_len = message.len();
                 if max_data > 0 && (party.data_exchanged > max_data || msg_len > max_data) {
@@ -139,7 +158,11 @@ impl ChannelServer {
                         "Too much data sent through {}, closing", channel
                     );
                     // self.metrics.borrow().incr("conn.max.data").ok();
-                    return Err(perror::HandlerErrorKind::XSDataErr.into());
+                    let mut remote = "";
+                    if let Some(ref rr) = party.remote {
+                        remote = rr;
+                    }
+                    return Err(perror::HandlerErrorKind::XSDataErr(remote.to_owned()).into());
                 }
                 party.data_exchanged += msg_len;
                 let msg_count = u8::from(self.settings.borrow().max_exchanges);
@@ -149,15 +172,18 @@ impl ChannelServer {
                         self.log.log,
                         "Too many messages through {}, closing", channel
                     );
+                    let mut remote = "";
+                    if let Some(ref rr) = party.remote {
+                        remote = rr;
+                    }
                     // self.metrics.borrow().incr("conn.max.msg").ok();
-                    return Err(perror::HandlerErrorKind::XSMessageErr.into());
+                    return Err(perror::HandlerErrorKind::XSMessageErr(remote.to_owned()).into());
                 }
                 if party.id != skip_id {
                     if let Some(addr) = self.sessions.get(&party.id) {
                         addr.do_send(TextMessage(MessageType::Text, message.to_owned()))
                             .ok();
                     }
-                } else {
                 }
             }
         }
@@ -202,15 +228,16 @@ impl Handler<Connect> for ChannelServer {
             started: Instant::now(),
             msg_count: 0,
             data_exchanged: 0,
+            remote: msg.remote,
         };
         self.sessions.insert(new_chan.id, msg.addr.clone());
         debug!(
             self.log.log,
             "New connection to {}: [{}]",
-            &msg.channel.simple(),
+            &msg.channel.to_simple(),
             &new_chan.id
         );
-        let chan_id = &msg.channel.simple();
+        let chan_id = &msg.channel.to_simple();
         {
             if !self.channels.contains_key(&msg.channel) {
                 debug!(
@@ -237,6 +264,12 @@ impl Handler<Connect> for ChannelServer {
                 );
                 self.sessions.remove(&new_chan.id);
                 // self.metrics.borrow().incr("conn.max.conn").ok();
+                // It doesn't make sense to impose a high penalty for this
+                // behavior, but we may want to flag and log the origin
+                // IP for later analytics.
+                // We could also impose a tiny penalty on the IP (if possible)
+                // which would minimally impact accidental occurances, but
+                // add up for major infractors.
                 return 0;
             }
             group.insert(session_id.clone(), new_chan);
@@ -259,9 +292,10 @@ impl Handler<Disconnect> for ChannelServer {
     fn handle(&mut self, msg: Disconnect, ctx: &mut Context<Self>) {
         debug!(
             self.log.log,
-            "Connection dropped for {} : {}",
-            &msg.channel.simple(),
-            &msg.id
+            "Connection dropped for {} : {} {}",
+            &msg.channel.to_simple(),
+            &msg.id,
+            &msg.reason,
         );
         self.shutdown(&msg.channel);
     }
@@ -281,7 +315,8 @@ impl Handler<ClientMessage> for ChannelServer {
                 &json!({
                     "message": &msg.message,
                     "sender": &msg.sender,
-                }).to_string(),
+                })
+                .to_string(),
                 msg.id,
             )
             .is_err()
