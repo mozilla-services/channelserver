@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, SocketAddr};
 
 use actix::Addr;
@@ -87,30 +87,35 @@ fn handle_city_err(log: Option<&Addr<logging::MozLogger>>, err: &MaxMindDBError)
             l.do_send(logging::LogMessage {
                 level: logging::ErrorLevel::Critical,
                 msg: format!("Invalid GeoIP database! {:?}", s),
+                attributes: None,
             })
         }),
         maxminddb::MaxMindDBError::IoError(s) => log.map(|l| {
             l.do_send(logging::LogMessage {
                 level: logging::ErrorLevel::Critical,
                 msg: format!("Could not read from database file! {:?}", s),
+                attributes: None,
             })
         }),
         maxminddb::MaxMindDBError::MapError(s) => log.map(|l| {
             l.do_send(logging::LogMessage {
                 level: logging::ErrorLevel::Warn,
                 msg: format!("Mapping error: {:?}", s),
+                attributes: None,
             })
         }),
         maxminddb::MaxMindDBError::DecodingError(s) => log.map(|l| {
             l.do_send(logging::LogMessage {
                 level: logging::ErrorLevel::Warn,
                 msg: format!("Could not decode mapping result: {:?}", s),
+                attributes: None,
             })
         }),
         maxminddb::MaxMindDBError::AddressNotFoundError(s) => log.map(|l| {
             l.do_send(logging::LogMessage {
                 level: logging::ErrorLevel::Debug,
                 msg: format!("Could not find address for IP: {:?}", s),
+                attributes: None,
             })
         }),
         // include to future proof against cross compile dependency errors
@@ -118,12 +123,17 @@ fn handle_city_err(log: Option<&Addr<logging::MozLogger>>, err: &MaxMindDBError)
             l.do_send(logging::LogMessage {
                 level: logging::ErrorLevel::Error,
                 msg: format!("Unknown GeoIP error encountered: {:?}", err),
+                attributes: None,
             })
         }),
     };
 }
 
-fn get_ua(headers: &http::HeaderMap, log: Option<&Addr<logging::MozLogger>>) -> Option<String> {
+fn get_ua(
+    headers: &http::HeaderMap,
+    log: Option<&Addr<logging::MozLogger>>,
+    meta: &SenderData,
+) -> Option<String> {
     if let Some(ua) = headers
         .get(http::header::USER_AGENT)
         .map(|s| match s.to_str() {
@@ -132,6 +142,7 @@ fn get_ua(headers: &http::HeaderMap, log: Option<&Addr<logging::MozLogger>>) -> 
                     l.do_send(logging::LogMessage {
                         level: logging::ErrorLevel::Warn,
                         msg: format!("Bad UA string: {:?}", x),
+                        attributes: meta.clone().into(),
                     })
                 });
                 // We have to return Some value here.
@@ -226,7 +237,8 @@ fn get_location(
         log.map(|l| {
             l.do_send(logging::LogMessage {
                 level: logging::ErrorLevel::Debug,
-                msg: format!("Looking up IP: {:?}", sender.remote),
+                msg: format!("Looking up IP"),
+                attributes: sender.clone().into(),
             })
         });
         // Strip the port from the remote (if present)
@@ -306,7 +318,8 @@ fn get_location(
                 log.map(|l| {
                     l.do_send(logging::LogMessage {
                         level: logging::ErrorLevel::Info,
-                        msg: format!("No location info for IP: {:?}", sender.remote),
+                        msg: format!("No location info for IP"),
+                        attributes: sender.clone().into(),
                     })
                 });
             }
@@ -320,24 +333,6 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
         let mut sender = SenderData::default();
         let headers = req.headers();
         let log = req.state().log.clone();
-        let langs = match headers.get(http::header::ACCEPT_LANGUAGE) {
-            None => vec![String::from("*")],
-            Some(l) => {
-                let lang = match l.to_str() {
-                    Err(err) => {
-                        log.do_send(logging::LogMessage {
-                            level: logging::ErrorLevel::Warn,
-                            msg: format!("Bad Accept-Language string: {:?}", err),
-                        });
-                        "*"
-                    }
-                    Ok(ls) => ls,
-                };
-                preferred_languages(lang.to_owned())
-            }
-        };
-        // parse user-header for platform info
-        sender.ua = get_ua(&headers, Some(&log));
         // Ideally, this would just get &req. For testing, I'm passing in the values.
         sender.remote = match get_remote(
             &req.peer_addr(),
@@ -349,12 +344,57 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
                 log.do_send(logging::LogMessage {
                     level: logging::ErrorLevel::Error,
                     msg: format!("{:?}", err),
+                    attributes: sender.clone().into(),
                 });
                 None
             }
         };
+        let langs = match headers.get(http::header::ACCEPT_LANGUAGE) {
+            None => vec![String::from("*")],
+            Some(l) => {
+                let lang = match l.to_str() {
+                    Err(err) => {
+                        log.do_send(logging::LogMessage {
+                            level: logging::ErrorLevel::Warn,
+                            msg: format!("Bad Accept-Language string: {:?}", err),
+                            attributes: sender.clone().into(),
+                        });
+                        "*"
+                    }
+                    Ok(ls) => ls,
+                };
+                preferred_languages(lang.to_owned())
+            }
+        };
+        // parse user-header for platform info
+        sender.ua = get_ua(&headers, Some(&log), &sender);
         get_location(&mut sender, &langs, Some(&log), &req.state().iploc);
         sender
+    }
+}
+
+/// Convert the Sender Metadata into a optional hash of data. Only include things that are set.
+/// This is used mostly by the logger.
+impl Into<Option<HashMap<String, String>>> for SenderData {
+    fn into(self) -> Option<HashMap<String, String>> {
+        let mut map: HashMap<String, String> = HashMap::new();
+        // Do not include UA string for PII reasons.
+        if let Some(val) = self.remote {
+            map.insert("remote_ip".to_owned(), val);
+        }
+        if let Some(val) = self.city {
+            map.insert("remote_city".to_owned(), val);
+        }
+        if let Some(val) = self.region {
+            map.insert("remote_region".to_owned(), val);
+        }
+        if let Some(val) = self.country {
+            map.insert("remote_country".to_owned(), val);
+        }
+        if map.len() > 0 {
+            return Some(map);
+        }
+        None
     }
 }
 
@@ -420,19 +460,23 @@ mod test {
         let good_header = "Mozilla/5.0 Foo";
         let blank_header = "";
         let mut good_headers = http::HeaderMap::new();
+        let meta = SenderData::default();
         good_headers.insert(
             http::header::USER_AGENT,
             http::header::HeaderValue::from_static(good_header),
         );
-        assert_eq!(Some(good_header.to_owned()), get_ua(&good_headers, None));
+        assert_eq!(
+            Some(good_header.to_owned()),
+            get_ua(&good_headers, None, &meta)
+        );
         let mut blank_headers = http::HeaderMap::new();
         blank_headers.insert(
             http::header::USER_AGENT,
             http::header::HeaderValue::from_static(blank_header),
         );
-        assert_eq!(None, get_ua(&blank_headers, None));
+        assert_eq!(None, get_ua(&blank_headers, None, &meta));
         let empty_headers = http::HeaderMap::new();
-        assert_eq!(None, get_ua(&empty_headers, None));
+        assert_eq!(None, get_ua(&empty_headers, None, &meta));
     }
 
     #[test]

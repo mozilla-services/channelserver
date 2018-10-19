@@ -8,7 +8,7 @@ static PREFIX: &str = "PAIR";
 pub struct Settings {
     pub hostname: String,             // server hostname (localhost)
     pub port: u16,                    // server port (8000)
-    pub max_clients: u8,              // Max clients per channel (2)
+    pub max_channel_connections: u8,  // Max connections per channel (3)
     pub conn_lifespan: u64,           // Total connection lifespan in seconds (300)
     pub client_timeout: u64,          // Client timeout for pong responses (30)
     pub max_exchanges: u8,            // Max number of messages before channel shutdown (3)
@@ -21,6 +21,7 @@ pub struct Settings {
     pub ip_reputation_server: String, // IP Reputation server. Leave blank to disable ("")
     pub iprep_min: u8,                // Minimum IP Reputation (0)
     pub ip_violation: String,         // Name of the abuse violation
+    pub heartbeat: u64,               // Heartbeat rate in seconds for pings (5)
 }
 
 impl Settings {
@@ -32,7 +33,7 @@ impl Settings {
         settings.set_default("max_exchanges", 3)?;
         settings.set_default("conn_lifespan", 300)?;
         settings.set_default("client_timeout", 30)?;
-        settings.set_default("max_clients", 2)?;
+        settings.set_default("max_channel_connections", 3)?;
         settings.set_default("max_data", 0)?;
         settings.set_default("port", 8000)?;
         settings.set_default("hostname", "0.0.0.0".to_owned())?;
@@ -42,6 +43,7 @@ impl Settings {
         settings.set_default("ip_reputation_server", "".to_owned())?;
         settings.set_default("iprep_min", 0)?;
         settings.set_default("ip_violation", "channel_abuse".to_owned())?;
+        settings.set_default("heartbeat", 5)?;
         // Get the run environment
         let env = env::var("RUN_MODE").unwrap_or("development".to_owned());
         // start with any local config file.

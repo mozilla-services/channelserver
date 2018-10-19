@@ -28,6 +28,7 @@ extern crate ipnet;
 extern crate maxminddb;
 extern crate reqwest;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -54,13 +55,14 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
     // scoped request, since the calling structure is different for the two, so
     // manually extracting the id from the path.
     let mut path: Vec<_> = req.path().split("/").collect();
+    let meta_info = meta::SenderData::from(req.clone());
     let channel =
         Uuid::parse_str(path.pop().unwrap_or_else(|| "")).unwrap_or_else(|_| Uuid::new_v4());
     &req.state().log.do_send(logging::LogMessage {
         level: logging::ErrorLevel::Info,
         msg: format!("Creating session for channel: \"{}\"", channel.to_simple()),
+        attributes: meta_info.clone().into(),
     });
-    let meta_info = meta::SenderData::from(req.clone());
 
     ws::start(
         req,
@@ -150,6 +152,7 @@ fn main() {
     let db_loc = settings.mmdb_loc.clone();
     let connection_lifespan = settings.conn_lifespan;
     let client_timeout = settings.client_timeout;
+    let ping_interval = settings.heartbeat;
     // Create Http server with websocket support
     HttpServer::new(move || {
         /*
@@ -170,6 +173,7 @@ fn main() {
             trusted_proxy_list: trusted_list.clone(),
             connection_lifespan,
             client_timeout,
+            ping_interval,
         };
 
         build_app(App::with_state(state))
@@ -209,6 +213,7 @@ mod test {
                 trusted_proxy_list: vec![],
                 connection_lifespan: 60,
                 client_timeout: 30,
+                ping_interval: 5,
             }
         });
         srv.start(|app| {

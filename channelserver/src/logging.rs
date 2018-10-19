@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 use actix::prelude::{Actor, Context, Handler};
@@ -63,6 +64,7 @@ impl Actor for MozLogger {
 pub struct LogMessage {
     pub level: ErrorLevel,
     pub msg: String,
+    pub attributes: Option<HashMap<String, String>>,
 }
 
 impl Display for LogMessage {
@@ -74,16 +76,11 @@ impl Display for LogMessage {
             ErrorLevel::Error => "ERROR",
             ErrorLevel::Critical => "CRITICAL",
         };
-        /* TODO: Eventually add attributes
-        let mut attrs = Vec::new();
-        if Some(&self.attributes) {
-            for (k, v) in &self.attributes {
-                attrs.push(format!("{} => {}", k, v));
-            }
+        let mut msg = format!("{}: {}", level, self.msg);
+        if let Some(ref attributes) = self.attributes {
+            msg = format!("{} :: {:?}", msg, attributes);
         }
-        write!(f, "## {}: {} ({})", level, self.msg, attrs.join(", "));
-        */
-        Ok(write!(f, "{}", self.msg)?)
+        Ok(write!(f, "{}", msg)?)
     }
 }
 

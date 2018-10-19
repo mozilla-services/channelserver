@@ -97,15 +97,20 @@ pub struct Channel {
     pub remote: Option<String>,
 }
 
+type Channels = HashMap<ChannelId, Channel>;
+
 /// `ChannelServer` manages chat channels and responsible for coordinating chat
 /// session. implementation is super primitive
 pub struct ChannelServer {
     // collections of sessions grouped by channel
-    channels: HashMap<Uuid, HashMap<ChannelId, Channel>>,
+    channels: HashMap<Uuid, Channels>,
     // individual connections
     sessions: HashMap<SessionId, Recipient<TextMessage>>,
+    // random number generator
     rng: RefCell<ThreadRng>,
+    // logging object
     log: MozLogger,
+    // configuration options
     pub settings: RefCell<Settings>,
     // pub metrics: RefCell<StatsdClient>,
 }
@@ -135,20 +140,6 @@ impl ChannelServer {
         skip_id: SessionId,
     ) -> Result<(), perror::HandlerError> {
         if let Some(participants) = self.channels.get_mut(channel) {
-            // show's over, everyone go home.
-            // On the off chance that the user has sent a `"message":"^D"` (EOL) as
-            // the data record, close the connection. Normally, we use a message type
-            // to qualify the disconnect message. That still needs a message element,
-            // so we use `"^D"`.
-            if message.contains(&format!("\"message\":\"{}\"", EOL)) {
-                for (id, info) in participants {
-                    if let Some(addr) = self.sessions.get(id) {
-                        addr.do_send(TextMessage(MessageType::Terminate, EOL.to_owned()))
-                            .ok();
-                    }
-                }
-                return Err(perror::HandlerErrorKind::ShutdownErr.into());
-            }
             for party in participants.values_mut() {
                 let max_data: usize = self.settings.borrow().max_data as usize;
                 let msg_len = message.len();
@@ -192,7 +183,7 @@ impl ChannelServer {
 
     /// Kill a channel and terminate all participants.
     ///
-    /// This sends a ^D message to each participant, which forces the connection closed.
+    /// This sends a Terminate to each participant, which forces the connection closed.
     fn shutdown(&mut self, channel: &Uuid) {
         if let Some(participants) = self.channels.get_mut(channel) {
             for (id, info) in participants {
@@ -205,6 +196,21 @@ impl ChannelServer {
             }
         }
     }
+}
+
+/// Is a previously connected client trying to reconnect?
+fn reconnect_check(group: &Channels, new_remote: &Option<String>) -> bool {
+    if let Some(ref req_ip) = new_remote {
+        for (_, participant) in group {
+            println!("Checking {:?}", &participant.remote);
+            if let Some(ref loc_ip) = &participant.remote {
+                if req_ip == loc_ip {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 /// Make actor from `ChannelServer`
@@ -257,7 +263,7 @@ impl Handler<Connect> for ChannelServer {
             // should be safe. Creating here hits lifetime exceptions as
             // well.
             let group = self.channels.get_mut(&msg.channel).unwrap();
-            if group.len() >= self.settings.borrow().max_clients.into() {
+            if group.len() >= self.settings.borrow().max_channel_connections.into() {
                 info!(
                     self.log.log,
                     "Too many connections requested for channel {}", chan_id
@@ -272,11 +278,28 @@ impl Handler<Connect> for ChannelServer {
                 // add up for major infractors.
                 return 0;
             }
+            // The group should have two principle parties, the auth and supplicant
+            // Any connection beyond that group should be checked to ensure it's
+            // from a known IP. If a principle that only has one connection and it
+            // drops, it is possible that it can't reconnect, but that's not a bad
+            // thing. We should just let the connection expire as invalid so that
+            // it's not stolen.
+            if group.len() > 2 {
+                if !reconnect_check(&group, &new_chan.remote) {
+                    error!(
+                        self.log.log,
+                        "Unexpected remote connection from {}",
+                        new_chan.remote.clone().unwrap()
+                    );
+                    return 0;
+                }
+            }
             group.insert(session_id.clone(), new_chan);
             debug!(self.log.log, "channel {}: [{:?}]", chan_id, group,);
         }
         // tell the client what their channel is.
-        let jpath = json!({ "link": format!("/v1/ws/{}", chan_id) });
+        let jpath = json!({ "link": format!("/v1/ws/{}", chan_id),
+                            "channelid": chan_id.to_string() });
         &msg.addr
             .do_send(TextMessage(MessageType::Text, jpath.to_string()));
 
@@ -306,7 +329,7 @@ impl Handler<ClientMessage> for ChannelServer {
     type Result = ();
 
     fn handle(&mut self, msg: ClientMessage, _: &mut Context<Self>) {
-        if &msg.message_type == &MessageType::Terminate || &msg.message == EOL {
+        if &msg.message_type == &MessageType::Terminate {
             return self.shutdown(&msg.channel);
         }
         if self
@@ -323,5 +346,40 @@ impl Handler<ClientMessage> for ChannelServer {
         {
             self.shutdown(&msg.channel)
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_reconnect() {
+        let mut test_group: Channels = HashMap::new();
+
+        test_group.insert(
+            1,
+            Channel {
+                id: 1,
+                started: Instant::now(),
+                msg_count: 0,
+                data_exchanged: 0,
+                remote: Some("127.0.0.1".to_owned()),
+            },
+        );
+        test_group.insert(
+            2,
+            Channel {
+                id: 1,
+                started: Instant::now(),
+                msg_count: 0,
+                data_exchanged: 0,
+                remote: Some("127.0.0.2".to_owned()),
+            },
+        );
+
+        assert!(reconnect_check(&test_group, &None) == false);
+        assert!(reconnect_check(&test_group, &Some("10.0.0.1".to_owned())) == false);
+        assert!(reconnect_check(&test_group, &Some("127.0.0.2".to_owned())) == true);
     }
 }

@@ -14,10 +14,6 @@ use logging;
 use meta::SenderData;
 use server;
 
-//TODO: configs?
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
-const CLIENT_TIMEOUT: Duration = Duration::from_secs(30);
-
 /// This is our websocket route state, this state is shared with all route
 /// instances via `HttpContext::state()`
 pub struct WsChannelSessionState {
@@ -28,6 +24,7 @@ pub struct WsChannelSessionState {
     pub trusted_proxy_list: Vec<IpNet>,
     pub connection_lifespan: u64,
     pub client_timeout: u64,
+    pub ping_interval: u64,
 }
 
 pub struct WsChannelSession {
@@ -59,6 +56,7 @@ impl Actor for WsChannelSession {
         self.hb(ctx);
 
         self.meta = SenderData::from(ctx.request().clone());
+        let meta = self.meta.clone();
         let addr: Addr<Self> = ctx.address();
         ctx.state()
             .addr
@@ -78,6 +76,7 @@ impl Actor for WsChannelSession {
                         ctx.state().log.do_send(logging::LogMessage {
                             level: logging::ErrorLevel::Debug,
                             msg: format!("Starting new session [{:?}]", session_id),
+                            attributes: meta.into(),
                         });
                         // ctx.state().metrics.incr("conn.create").ok();
                         act.id = session_id;
@@ -87,6 +86,7 @@ impl Actor for WsChannelSession {
                         ctx.state().log.do_send(logging::LogMessage {
                             level: logging::ErrorLevel::Error,
                             msg: format!("{:?}", err),
+                            attributes: meta.into(),
                         });
                         ctx.stop()
                     }
@@ -102,17 +102,8 @@ impl Actor for WsChannelSession {
         ctx.state().log.do_send(logging::LogMessage {
             level: logging::ErrorLevel::Debug,
             msg: format!("Killing session [{:?}]", self.id),
+            attributes: self.meta.clone().into(),
         });
-        if self.id != 0 {
-            // Broadcast the close to all attached clients.
-            ctx.state().addr.do_send(server::ClientMessage {
-                id: 0,
-                message_type: server::MessageType::Terminate,
-                message: server::EOL.to_owned(),
-                channel: self.channel.clone(),
-                sender: SenderData::default(),
-            });
-        }
         Running::Stop
     }
 }
@@ -127,6 +118,7 @@ impl Handler<server::TextMessage> for WsChannelSession {
                 ctx.state().log.do_send(logging::LogMessage {
                     level: logging::ErrorLevel::Debug,
                     msg: format!("Closing session [{:?}]", self.id),
+                    attributes: self.meta.clone().into(),
                 });
                 ctx.close(Some(ws::CloseCode::Normal.into()));
             }
@@ -141,6 +133,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
         ctx.state().log.do_send(logging::LogMessage {
             level: logging::ErrorLevel::Debug,
             msg: format!("Websocket Message: {:?}", msg),
+            attributes: self.meta.clone().into(),
         });
         match msg {
             ws::Message::Ping(msg) => {
@@ -165,6 +158,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
                 ctx.state().log.do_send(logging::LogMessage {
                     level: logging::ErrorLevel::Info,
                     msg: format!("TODO: Binary format not supported"),
+                    attributes: self.meta.clone().into(),
                 });
             }
             ws::Message::Close(_) => {
@@ -176,6 +170,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
                 ctx.state().log.do_send(logging::LogMessage {
                     level: logging::ErrorLevel::Debug,
                     msg: format!("Shutting down session [{}].", self.id),
+                    attributes: self.meta.clone().into(),
                 });
                 ctx.stop();
             }
@@ -185,12 +180,14 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
 
 impl WsChannelSession {
     fn hb(&self, ctx: &mut ws::WebsocketContext<Self, WsChannelSessionState>) {
-        ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
+        let interval = Duration::from_secs(ctx.state().ping_interval);
+        ctx.run_interval(interval, |act, ctx| {
             // Has the connection's lifespan expired?
             if Instant::now() > act.expiry {
                 ctx.state().log.do_send(logging::LogMessage {
                     level: logging::ErrorLevel::Warn,
                     msg: format!("Client connected too long. {}:{}", act.id, act.channel,),
+                    attributes: act.meta.clone().into(),
                 });
                 ctx.state().addr.do_send(server::Disconnect {
                     id: act.id,
@@ -200,11 +197,15 @@ impl WsChannelSession {
                 ctx.stop();
                 return;
             }
+
             // Have we not gotten any traffic from the client?
-            if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
+            if Instant::now().duration_since(act.hb)
+                > Duration::from_secs(ctx.state().client_timeout)
+            {
                 ctx.state().log.do_send(logging::LogMessage {
                     level: logging::ErrorLevel::Warn,
                     msg: format!("Client time-out. Disconnecting {}:{}", act.id, act.channel,),
+                    attributes: act.meta.clone().into(),
                 });
                 ctx.state().addr.do_send(server::Disconnect {
                     id: act.id,
