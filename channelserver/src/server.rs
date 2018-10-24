@@ -3,14 +3,13 @@
 //! channel through `ChannelServer`.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry};
 use std::fmt;
 use std::time::Instant;
 
 use actix::prelude::{Actor, Context, Handler, Recipient};
 // use cadence::StatsdClient;
 use rand::{self, Rng, ThreadRng};
-use uuid::Uuid;
 
 use logging::MozLogger;
 use meta;
@@ -278,7 +277,7 @@ impl Handler<Connect> for ChannelServer {
         );
         let chan_id = &msg.channel.to_simple();
         // Is this a new channel request?
-        if !self.channels.contains_key(&msg.channel) {
+        if let Entry::Vacant(entry) = self.channels.entry(msg.channel) {
             // Is this the first time we're requesting this channel?
             if !&msg.initial_connect {
                 let mut attrs = HashMap::new();
@@ -300,12 +299,8 @@ impl Handler<Connect> for ChannelServer {
                 );
                 return 0;
             }
-            self.channels.insert(msg.channel, HashMap::new());
+            let group = entry.insert(HashMap::new());
             // self.metrics.borrow().incr("conn.new").ok();
-            // we've already checked and created this, so calling unwrap
-            // should be safe. Creating here hits lifetime exceptions as
-            // well.
-            let group = self.channels.get_mut(&msg.channel).unwrap();
             if group.len() >= self.settings.borrow().max_channel_connections.into() {
                 info!(
                     self.log.log,
