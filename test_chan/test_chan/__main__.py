@@ -28,6 +28,7 @@ class Connection(object):
             raise
         body = json.loads(self.ws.recv())
         self.link = body["link"]
+        self.channelid = body["channel"]
 
     def send(self, message):
         self.ws.send(message)
@@ -99,8 +100,10 @@ def full_exchange(opts):
     (alice, bob) = get_connection(opts)
     message = """intro message"""
     alice.send(message)
-    assert message == json.loads(bob.recv())["message"], "Intro didn't match"
+    bob_data = json.loads(bob.recv())
+    assert message == bob_data["message"], "Intro didn't match"
     # channelserv only deals with text currently
+    assert 'remote' in bob_data['sender'], "No remote in sender data"
     message = base64.b85encode(os.urandom(1024)).decode("utf8")
     alice.send(message)
     reply = json.loads(bob.recv())
@@ -109,6 +112,7 @@ def full_exchange(opts):
 
 
 def max_data(opts, max_bytes=3096):
+    # TODO: Reset the running server to accept max data of some value.
     print("#### Max Data")
     (alice, bob) = get_connection(opts)
     message = base64.b85encode(os.urandom(max_bytes)).decode("utf8")
@@ -140,13 +144,20 @@ def max_exchange(opts, max_exchange=5):
     print("===== ok")
 
 
+def bad_connection(opts):
+    print("#### Bad Connection")
+    alice = Connection(url=opts.base() + "/v1/ws/")
+    bad_link = alice.link
+    bob = Connection(url=)
+
+
 def main():
     opts = Config()
     try:
         setup(opts, max_data="2048")
         simple_connection(opts)
         full_exchange(opts)
-        max_data(opts, 3096)
+        # max_data(opts, 3096)
         max_exchange(opts, 5)
         print("\n\n All tests passed")
     except Exception as ex:
