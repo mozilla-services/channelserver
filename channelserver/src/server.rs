@@ -3,7 +3,7 @@
 //! channel through `ChannelServer`.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::{hash_map::Entry, HashMap};
 use std::fmt;
 use std::time::Instant;
 
@@ -16,8 +16,8 @@ use meta;
 // use metrics;
 use logging;
 use perror;
-use settings::Settings;
 use session;
+use settings::Settings;
 
 pub const EOL: &'static str = "\x04";
 
@@ -299,42 +299,43 @@ impl Handler<Connect> for ChannelServer {
                 );
                 return 0;
             }
-            let group = entry.insert(HashMap::new());
-            // self.metrics.borrow().incr("conn.new").ok();
-            if group.len() >= self.settings.borrow().max_channel_connections.into() {
-                info!(
+            entry.insert(HashMap::new());
+        }
+        let group = self.channels.get_mut(&msg.channel).unwrap();
+        // self.metrics.borrow().incr("conn.new").ok();
+        if group.len() >= self.settings.borrow().max_channel_connections.into() {
+            info!(
+                self.log.log,
+                "Too many connections requested for channel {}", chan_id
+            );
+            self.sessions.remove(&new_chan.id);
+            // self.metrics.borrow().incr("conn.max.conn").ok();
+            // It doesn't make sense to impose a high penalty for this
+            // behavior, but we may want to flag and log the origin
+            // IP for later analytics.
+            // We could also impose a tiny penalty on the IP (if possible)
+            // which would minimally impact accidental occurances, but
+            // add up for major infractors.
+            return 0;
+        }
+        // The group should have two principle parties, the auth and supplicant
+        // Any connection beyond that group should be checked to ensure it's
+        // from a known IP. If a principle that only has one connection and it
+        // drops, it is possible that it can't reconnect, but that's not a bad
+        // thing. We should just let the connection expire as invalid so that
+        // it's not stolen.
+        if group.len() > 2 {
+            if !reconnect_check(&group, &new_chan.remote) {
+                error!(
                     self.log.log,
-                    "Too many connections requested for channel {}", chan_id
+                    "Unexpected remote connection from {}",
+                    new_chan.remote.clone().unwrap()
                 );
-                self.sessions.remove(&new_chan.id);
-                // self.metrics.borrow().incr("conn.max.conn").ok();
-                // It doesn't make sense to impose a high penalty for this
-                // behavior, but we may want to flag and log the origin
-                // IP for later analytics.
-                // We could also impose a tiny penalty on the IP (if possible)
-                // which would minimally impact accidental occurances, but
-                // add up for major infractors.
                 return 0;
             }
-            // The group should have two principle parties, the auth and supplicant
-            // Any connection beyond that group should be checked to ensure it's
-            // from a known IP. If a principle that only has one connection and it
-            // drops, it is possible that it can't reconnect, but that's not a bad
-            // thing. We should just let the connection expire as invalid so that
-            // it's not stolen.
-            if group.len() > 2 {
-                if !reconnect_check(&group, &new_chan.remote) {
-                    error!(
-                        self.log.log,
-                        "Unexpected remote connection from {}",
-                        new_chan.remote.clone().unwrap()
-                    );
-                    return 0;
-                }
-            }
-            group.insert(session_id.clone(), new_chan);
-            debug!(self.log.log, "channel {}: [{:?}]", chan_id, group,);
         }
+        group.insert(session_id.clone(), new_chan);
+        debug!(self.log.log, "channel {}: [{:?}]", chan_id, group,);
         // tell the client what their channel is.
         let jpath = json!({ "link": format!("/v1/ws/{}", chan_id),
                             "channelid": chan_id.to_string() });
