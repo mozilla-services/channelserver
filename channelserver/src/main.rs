@@ -28,7 +28,6 @@ extern crate ipnet;
 extern crate maxminddb;
 extern crate reqwest;
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -56,11 +55,36 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
     // manually extracting the id from the path.
     let mut path: Vec<_> = req.path().split("/").collect();
     let meta_info = meta::SenderData::from(req.clone());
-    let channel =
-        Uuid::parse_str(path.pop().unwrap_or_else(|| "")).unwrap_or_else(|_| Uuid::new_v4());
+    let mut initial_connect = true;
+    let channel = match path.pop() {
+        Some(id) => {
+            // if the id is valid, but not present, treat it like a "None"
+            if id.len() == 0 {
+                Uuid::new_v4()
+            } else {
+                initial_connect = false;
+                Uuid::parse_str(id).unwrap_or_else(|e| {
+                    &req.state().log.do_send(logging::LogMessage {
+                        level: logging::ErrorLevel::Warn,
+                        msg: format!("Invalid ChannelID specified: {:?}", e),
+                        attributes: meta_info.clone().into(),
+                    });
+                    Uuid::nil()
+                })
+            }
+        }
+        None => Uuid::new_v4(),
+    };
+    if channel == Uuid::nil() {
+        return Ok(HttpResponse::new(http::StatusCode::NOT_FOUND));
+    }
     &req.state().log.do_send(logging::LogMessage {
         level: logging::ErrorLevel::Info,
-        msg: format!("Creating session for channel: \"{}\"", channel.to_simple()),
+        msg: format!(
+            "Creating session for {} channel: \"{}\"",
+            if initial_connect { "new" } else { "candidate" },
+            channel.to_simple().to_string()
+        ),
         attributes: meta_info.clone().into(),
     });
 
@@ -72,6 +96,7 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
             expiry: Instant::now() + Duration::from_secs(req.state().connection_lifespan),
             channel: channel,
             meta: meta_info,
+            initial_connect,
         },
     )
 }

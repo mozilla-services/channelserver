@@ -15,8 +15,10 @@ use uuid::Uuid;
 use logging::MozLogger;
 use meta;
 // use metrics;
+use logging;
 use perror;
 use settings::Settings;
+use session;
 
 pub const EOL: &'static str = "\x04";
 
@@ -61,14 +63,15 @@ pub type ChannelId = usize;
 #[rtype(SessionId)]
 pub struct Connect {
     pub addr: Recipient<TextMessage>,
-    pub channel: Uuid,
+    pub channel: session::ChannelName,
     pub remote: Option<String>,
+    pub initial_connect: bool,
 }
 
 /// Session is disconnected
 #[derive(Message)]
 pub struct Disconnect {
-    pub channel: Uuid,
+    pub channel: session::ChannelName,
     pub id: SessionId,
     pub reason: DisconnectReason,
 }
@@ -83,7 +86,7 @@ pub struct ClientMessage {
     /// Peer message
     pub message: String,
     /// channel name
-    pub channel: Uuid,
+    pub channel: session::ChannelName,
     /// Sender info
     pub sender: meta::SenderData,
 }
@@ -103,7 +106,7 @@ type Channels = HashMap<ChannelId, Channel>;
 /// session. implementation is super primitive
 pub struct ChannelServer {
     // collections of sessions grouped by channel
-    channels: HashMap<Uuid, Channels>,
+    channels: HashMap<session::ChannelName, Channels>,
     // individual connections
     sessions: HashMap<SessionId, Recipient<TextMessage>>,
     // random number generator
@@ -135,7 +138,7 @@ impl ChannelServer {
     /// Send message to all users in the channel except skip_id
     fn send_message(
         &mut self,
-        channel: &Uuid,
+        channel: &session::ChannelName,
         message: &str,
         skip_id: SessionId,
     ) -> Result<(), perror::HandlerError> {
@@ -181,11 +184,35 @@ impl ChannelServer {
         Ok(())
     }
 
+    fn disconnect(&mut self, channel: &session::ChannelName, id: &usize) {
+        if let Some(participants) = self.channels.get_mut(channel) {
+            for (pid, info) in participants {
+                if id == pid {
+                    if let Some(addr) = self.sessions.get(&id) {
+                        // send a control message to force close
+                        addr.do_send(TextMessage(MessageType::Terminate, EOL.to_owned()))
+                            .ok();
+                    }
+                }
+            }
+        }
+        let mut do_shutdown = false;
+        if let Some(participants) = self.channels.get_mut(channel) {
+            participants.remove(id);
+            if participants.len() == 0 {
+                do_shutdown = true;
+            }
+        }
+        if do_shutdown {
+            self.shutdown(channel);
+        }
+    }
+
     /// Kill a channel and terminate all participants.
     ///
     /// This sends a Terminate to each participant, which forces the connection closed.
-    fn shutdown(&mut self, channel: &Uuid) {
-        if let Some(participants) = self.channels.get_mut(channel) {
+    fn shutdown(&mut self, channel: &session::ChannelName) {
+        if let Some(participants) = self.channels.get(channel) {
             for (id, info) in participants {
                 if let Some(addr) = self.sessions.get(&id) {
                     // send a control message to force close
@@ -195,6 +222,12 @@ impl ChannelServer {
                 self.sessions.remove(&id);
             }
         }
+        debug!(
+            self.log.log,
+            "Removing channel {}",
+            channel.to_simple().to_string()
+        );
+        self.channels.remove(channel);
     }
 }
 
@@ -244,21 +277,31 @@ impl Handler<Connect> for ChannelServer {
             &new_chan.id
         );
         let chan_id = &msg.channel.to_simple();
-        {
-            if !self.channels.contains_key(&msg.channel) {
-                debug!(
-                    self.log.log,
-                    "Creating new channel set {}: [{}]", chan_id, &new_chan.id,
+        // Is this a new channel request?
+        if !self.channels.contains_key(&msg.channel) {
+            // Is this the first time we're requesting this channel?
+            if !&msg.initial_connect {
+                let mut attrs = HashMap::new();
+                attrs.insert(
+                    "remote_ip".to_string(),
+                    new_chan.remote.unwrap_or("Unknown".to_owned()),
                 );
-                self.channels.insert(msg.channel, HashMap::new());
-            // self.metrics.borrow().incr("conn.new").ok();
-            } else {
-                debug!(
+                warn!(
                     self.log.log,
-                    "Adding session [{}] to existing channel set {}", &new_chan.id, chan_id
+                    "{}",
+                    logging::LogMessage {
+                        level: logging::ErrorLevel::Warn,
+                        msg: format!(
+                            "Attempt to connect to unknown channel {}",
+                            chan_id.to_string()
+                        ),
+                        attributes: Some(attrs),
+                    }
                 );
-                // self.metrics.borrow().incr("conn.joined").ok();
+                return 0;
             }
+            self.channels.insert(msg.channel, HashMap::new());
+            // self.metrics.borrow().incr("conn.new").ok();
             // we've already checked and created this, so calling unwrap
             // should be safe. Creating here hits lifetime exceptions as
             // well.
@@ -320,7 +363,7 @@ impl Handler<Disconnect> for ChannelServer {
             &msg.id,
             &msg.reason,
         );
-        self.shutdown(&msg.channel);
+        self.disconnect(&msg.channel, &msg.id);
     }
 }
 
@@ -330,7 +373,7 @@ impl Handler<ClientMessage> for ChannelServer {
 
     fn handle(&mut self, msg: ClientMessage, _: &mut Context<Self>) {
         if &msg.message_type == &MessageType::Terminate {
-            return self.shutdown(&msg.channel);
+            return self.disconnect(&msg.channel, &msg.id);
         }
         if self
             .send_message(

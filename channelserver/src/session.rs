@@ -14,6 +14,8 @@ use logging;
 use meta::SenderData;
 use server;
 
+pub type ChannelName = Uuid;
+
 /// This is our websocket route state, this state is shared with all route
 /// instances via `HttpContext::state()`
 pub struct WsChannelSessionState {
@@ -36,9 +38,11 @@ pub struct WsChannelSession {
     /// Max channel lifespan
     pub expiry: Instant,
     /// joined channel
-    pub channel: Uuid,
+    pub channel: ChannelName,
     /// peer name
     pub meta: SenderData,
+    /// is this the first request for the given channel?
+    pub initial_connect: bool,
 }
 
 impl Actor for WsChannelSession {
@@ -64,6 +68,7 @@ impl Actor for WsChannelSession {
                 addr: addr.recipient(),
                 channel: self.channel.clone(),
                 remote: self.meta.remote.clone(),
+                initial_connect: self.initial_connect,
             })
             .into_actor(self)
             .then(|res, act, ctx| {
@@ -103,6 +108,11 @@ impl Actor for WsChannelSession {
             level: logging::ErrorLevel::Debug,
             msg: format!("Killing session [{:?}]", self.id),
             attributes: self.meta.clone().into(),
+        });
+        ctx.state().addr.do_send(server::Disconnect {
+            channel: self.channel,
+            id: self.id,
+            reason: server::DisconnectReason::None,
         });
         Running::Stop
     }
