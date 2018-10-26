@@ -15,8 +15,15 @@ incatnations:
     $ virtualenv .
     $ bin/python setup.py install
 
-This will create ``bin/tester`` which will spin up a version of the
-channel server from ``target/debug`` and run a few integration tests on
-it.
+You can test using ``bin/pytest test_chan``. If you need to configure
+things, you need to set environment variables:
 
-There are still things to be done here, but at least it works.
+::
+
+    *TEST_APP_PATH* - Path to channel-server application. Set to "" to
+
+skip starting the local channel server. *../target/debug/channelserver*
+
+::
+
+    *

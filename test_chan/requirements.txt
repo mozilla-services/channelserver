@@ -1,2 +1,3 @@
 websocket-client==0.48.0
 psutil==5.4.6
+configargparse>=0.13.0
