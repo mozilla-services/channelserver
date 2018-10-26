@@ -18,12 +18,23 @@ incatnations:
 You can test using ``bin/pytest test_chan``. If you need to configure
 things, you need to set environment variables:
 
-::
++------------------------+-------------------------------------+---------------------------------+
+| Variable               | Description                         | Default                         |
++========================+=====================================+=================================+
+|*TEST_APP_PATH*         | Path to channel-server application. | _../target/debug/channelserver_ |
+|                        | Set to "" to skip starting the local|                                 |
+|                        | channel server.                     |                                 |
++------------------------+-------------------------------------+---------------------------------+
+|*TEST_PROTOCOL*         | Websocket protocol to use (ws, wss) | _ws_                            |
++------------------------+-------------------------------------+---------------------------------+
+|*TEST_HOST*             | Host name to connect to             | _localhost_                     |
++------------------------+-------------------------------------+---------------------------------+
+|*TEST_PORT*             | Port number for connection          | _8000_                          |
++------------------------+-------------------------------------+---------------------------------+
+|*TEST_MAX_TRANSACTIONS* | Number of transactions to attempt   | 5                               |
+|                        | for the `test_max_transactions`     |                                 |
++------------------------+-------------------------------------+---------------------------------+
+|*TEST_MAX_DATA*         | Max Data to attempt to send (0 to   | 0                               |
+|                        | skip this test)                     |                                 |
++------------------------+-------------------------------------+---------------------------------+
 
-    *TEST_APP_PATH* - Path to channel-server application. Set to "" to
-
-skip starting the local channel server. *../target/debug/channelserver*
-
-::
-
-    *
