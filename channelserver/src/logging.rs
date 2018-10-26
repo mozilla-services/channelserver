@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::io;
 
 use actix::prelude::{Actor, Context, Handler};
 
 use slog;
 use slog::Drain;
 use slog_async;
+use slog_mozlog_json::MozLogJson;
 use slog_term;
 
 #[derive(Clone, Debug)]
@@ -40,6 +42,26 @@ impl Debug for ErrorLevel {
 
 impl MozLogger {
     pub fn new() -> Self {
+        let json_drain = MozLogJson::new(io::stdout())
+            .logger_name(format!(
+                "{}-{}",
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION")
+            ))
+            .msg_type(format!("{}:log", env!("CARGO_PKG_NAME")))
+            .build()
+            .fuse();
+        let drain = slog_async::Async::new(json_drain).build().fuse();
+        Self {
+            log: slog::Logger::root(drain, o!()).new(o!()),
+        }
+    }
+
+    pub fn new_json() -> Self {
+        Self::new()
+    }
+
+    pub fn new_human() -> Self {
         let decorator = slog_term::TermDecorator::new().build();
         let drain = slog_term::CompactFormat::new(decorator).build().fuse();
         let drain = slog_async::Async::new(drain).build().fuse();
@@ -52,7 +74,7 @@ impl MozLogger {
 
 impl Default for MozLogger {
     fn default() -> Self {
-        Self::new()
+        Self::new_json()
     }
 }
 

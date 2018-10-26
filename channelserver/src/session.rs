@@ -5,7 +5,7 @@ use actix::{
     Running, StreamHandler, WrapFuture,
 };
 use actix_web::ws;
-// use cadence::{StatsdClient, Counted};
+use cadence::{StatsdClient};
 use ipnet::IpNet;
 use maxminddb;
 use uuid::Uuid;
@@ -20,9 +20,9 @@ pub type ChannelName = Uuid;
 /// instances via `HttpContext::state()`
 pub struct WsChannelSessionState {
     pub addr: Addr<server::ChannelServer>,
-    pub log: Addr<logging::MozLogger>,
+    pub log: logging::MozLogger,
     pub iploc: maxminddb::Reader,
-    // pub metrics: StatsdClient,
+    pub metrics: StatsdClient,
     pub trusted_proxy_list: Vec<IpNet>,
     pub connection_lifespan: u64,
     pub client_timeout: u64,
@@ -78,21 +78,22 @@ impl Actor for WsChannelSession {
                             ctx.stop();
                             return fut::err(());
                         }
-                        ctx.state().log.do_send(logging::LogMessage {
-                            level: logging::ErrorLevel::Debug,
-                            msg: format!("Starting new session [{:?}]", session_id),
-                            attributes: meta.into(),
-                        });
+                        debug!(
+                            ctx.state().log.log,
+                            "Starting new session";
+                            "session" => session_id,
+                            "remote_ip" => meta.remote,
+                        );
                         // ctx.state().metrics.incr("conn.create").ok();
                         act.id = session_id;
                     }
                     // something is wrong with chat server
                     Err(err) => {
-                        ctx.state().log.do_send(logging::LogMessage {
-                            level: logging::ErrorLevel::Error,
-                            msg: format!("{:?}", err),
-                            attributes: meta.into(),
-                        });
+                        error!(
+                            ctx.state().log.log,
+                            "Unhandled Error: {:?}", err;
+                            "remote_ip"=> meta.remote,
+                        );
                         ctx.stop()
                     }
                 }
@@ -104,11 +105,12 @@ impl Actor for WsChannelSession {
     /// Stop Session and alert all others in channel to shut down.
     fn stopping(&mut self, ctx: &mut Self::Context) -> Running {
         // notify chat server
-        ctx.state().log.do_send(logging::LogMessage {
-            level: logging::ErrorLevel::Debug,
-            msg: format!("Killing session [{:?}]", self.id),
-            attributes: self.meta.clone().into(),
-        });
+        debug!(
+            ctx.state().log.log,
+            "Killing session";
+            "session" => &self.id,
+            "remote_ip" => &self.meta.remote,
+        );
         ctx.state().addr.do_send(server::Disconnect {
             channel: self.channel,
             id: self.id,
@@ -125,11 +127,13 @@ impl Handler<server::TextMessage> for WsChannelSession {
     fn handle(&mut self, msg: server::TextMessage, ctx: &mut Self::Context) {
         match msg.0 {
             server::MessageType::Terminate => {
-                ctx.state().log.do_send(logging::LogMessage {
-                    level: logging::ErrorLevel::Debug,
-                    msg: format!("Closing session [{:?}]", self.id),
-                    attributes: self.meta.clone().into(),
-                });
+                debug!(
+                    ctx.state().log.log,
+                    "Closing session";
+                    "session"=> &self.id,
+                    "remote_ip" => &self.meta.remote
+                );
+
                 ctx.close(Some(ws::CloseCode::Normal.into()));
             }
             server::MessageType::Text => ctx.text(msg.1),
@@ -140,11 +144,10 @@ impl Handler<server::TextMessage> for WsChannelSession {
 /// WebSocket message handler
 impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
-        ctx.state().log.do_send(logging::LogMessage {
-            level: logging::ErrorLevel::Debug,
-            msg: format!("Websocket Message: {:?}", msg),
-            attributes: self.meta.clone().into(),
-        });
+        debug!(ctx.state().log.log,
+        "Websocket Message: {:?}", msg;
+        "remote_ip" => &self.meta.remote
+        );
         match msg {
             ws::Message::Ping(msg) => {
                 self.hb = Instant::now();
@@ -165,11 +168,11 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
                 })
             }
             ws::Message::Binary(bin) => {
-                ctx.state().log.do_send(logging::LogMessage {
-                    level: logging::ErrorLevel::Info,
-                    msg: format!("TODO: Binary format not supported"),
-                    attributes: self.meta.clone().into(),
-                });
+                info!(
+                    ctx.state().log.log,
+                    "TODO: Binary format not supported";
+                    "remote_ip"=> &self.meta.remote,
+                );
             }
             ws::Message::Close(_) => {
                 ctx.state().addr.do_send(server::Disconnect {
@@ -177,11 +180,12 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
                     channel: self.channel.clone(),
                     reason: server::DisconnectReason::None,
                 });
-                ctx.state().log.do_send(logging::LogMessage {
-                    level: logging::ErrorLevel::Debug,
-                    msg: format!("Shutting down session [{}].", self.id),
-                    attributes: self.meta.clone().into(),
-                });
+                debug!(
+                    ctx.state().log.log,
+                    "Shutting down session";
+                    "session" => &self.id,
+                    "remote_ip" => &self.meta.remote,
+                );
                 ctx.stop();
             }
         }
@@ -194,11 +198,13 @@ impl WsChannelSession {
         ctx.run_interval(interval, |act, ctx| {
             // Has the connection's lifespan expired?
             if Instant::now() > act.expiry {
-                ctx.state().log.do_send(logging::LogMessage {
-                    level: logging::ErrorLevel::Warn,
-                    msg: format!("Client connected too long. {}:{}", act.id, act.channel,),
-                    attributes: act.meta.clone().into(),
-                });
+                warn!(
+                    ctx.state().log.log,
+                    "Client connected too long";
+                    "session" => &act.id,
+                    "channel" => &act.channel.to_simple().to_string(),
+                    "remote_ip" => &act.meta.remote,
+                );
                 ctx.state().addr.do_send(server::Disconnect {
                     id: act.id,
                     channel: act.channel.clone(),
@@ -212,11 +218,13 @@ impl WsChannelSession {
             if Instant::now().duration_since(act.hb)
                 > Duration::from_secs(ctx.state().client_timeout)
             {
-                ctx.state().log.do_send(logging::LogMessage {
-                    level: logging::ErrorLevel::Warn,
-                    msg: format!("Client time-out. Disconnecting {}:{}", act.id, act.channel,),
-                    attributes: act.meta.clone().into(),
-                });
+                warn!(
+                    ctx.state().log.log,
+                    "Client time-out. Disconnecting";
+                    "session" => &act.id,
+                    "channel" => &act.channel.to_simple().to_string(),
+                    "remote_ip" => &act.meta.remote,
+                );
                 ctx.state().addr.do_send(server::Disconnect {
                     id: act.id,
                     channel: act.channel.clone(),
