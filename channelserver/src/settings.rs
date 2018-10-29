@@ -22,6 +22,7 @@ pub struct Settings {
     pub iprep_min: u8,                // Minimum IP Reputation (0)
     pub ip_violation: String,         // Name of the abuse violation
     pub heartbeat: u64,               // Heartbeat rate in seconds for pings (5)
+    pub human_logs: bool,             // Shoe "Human readable" logs (false)
 }
 
 impl Settings {
@@ -44,6 +45,7 @@ impl Settings {
         settings.set_default("iprep_min", 0)?;
         settings.set_default("ip_violation", "channel_abuse".to_owned())?;
         settings.set_default("heartbeat", 5)?;
+        settings.set_default("human_logs", false)?;
         // Get the run environment
         let env = env::var("RUN_MODE").unwrap_or("development".to_owned());
         // start with any local config file.

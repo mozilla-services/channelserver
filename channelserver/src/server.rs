@@ -14,7 +14,6 @@ use rand::{self, Rng, ThreadRng};
 use logging::MozLogger;
 use meta;
 // use metrics;
-use logging;
 use perror;
 use session;
 use settings::Settings;
@@ -145,10 +144,12 @@ impl ChannelServer {
             for party in participants.values_mut() {
                 let max_data: usize = self.settings.borrow().max_data as usize;
                 let msg_len = message.len();
+                let remote_ip = party.remote.clone().unwrap_or("Unknown".to_owned());
                 if max_data > 0 && (party.data_exchanged > max_data || msg_len > max_data) {
-                    info!(
+                    warn!(
                         self.log.log,
-                        "Too much data sent through {}, closing", channel
+                        "Too much data sent through {}, closing", channel;
+                        "remote_ip" => &remote_ip
                     );
                     // self.metrics.borrow().incr("conn.max.data").ok();
                     let mut remote = "";
@@ -161,9 +162,10 @@ impl ChannelServer {
                 let msg_count = u8::from(self.settings.borrow().max_exchanges);
                 party.msg_count += 1;
                 if msg_count > 0 && party.msg_count > msg_count {
-                    info!(
+                    warn!(
                         self.log.log,
-                        "Too many messages through {}, closing", channel
+                        "Too many messages through {}, closing", channel;
+                        "remote_ip" => &remote_ip
                     );
                     let mut remote = "";
                     if let Some(ref rr) = party.remote {
@@ -260,82 +262,78 @@ impl Handler<Connect> for ChannelServer {
 
     fn handle(&mut self, msg: Connect, ctx: &mut Context<Self>) -> Self::Result {
         let session_id = self.rng.borrow_mut().gen::<SessionId>();
-        let new_chan = Channel {
+        let new_session = Channel {
             // register session with random id
             id: session_id.clone(),
             started: Instant::now(),
             msg_count: 0,
             data_exchanged: 0,
-            remote: msg.remote,
+            remote: msg.remote.clone(),
         };
-        self.sessions.insert(new_chan.id, msg.addr.clone());
+        self.sessions.insert(new_session.id, msg.addr.clone());
         debug!(
             self.log.log,
-            "New connection to {}: [{}]",
-            &msg.channel.to_simple(),
-            &new_chan.id
+            "New connection";
+            "channel" => &msg.channel.to_simple().to_string(),
+            "session" => &new_session.id,
+            "remote_ip" => &msg.remote,
         );
         let chan_id = &msg.channel.to_simple();
         // Is this a new channel request?
         if let Entry::Vacant(entry) = self.channels.entry(msg.channel) {
             // Is this the first time we're requesting this channel?
             if !&msg.initial_connect {
-                let mut attrs = HashMap::new();
-                attrs.insert(
-                    "remote_ip".to_string(),
-                    new_chan.remote.unwrap_or("Unknown".to_owned()),
-                );
                 warn!(
                     self.log.log,
-                    "{}",
-                    logging::LogMessage {
-                        level: logging::ErrorLevel::Warn,
-                        msg: format!(
-                            "Attempt to connect to unknown channel {}",
-                            chan_id.to_string()
-                        ),
-                        attributes: Some(attrs),
-                    }
+                    "Attempt to connect to unknown channel";
+                    "channel" => &chan_id.to_string(),
+                    "remote_ip" => &msg.remote.clone().unwrap_or("Unknown".to_owned()),
                 );
                 return 0;
             }
-            entry.insert(HashMap::new());
-        }
-        let group = self.channels.get_mut(&msg.channel).unwrap();
-        // self.metrics.borrow().incr("conn.new").ok();
-        if group.len() >= self.settings.borrow().max_channel_connections.into() {
-            info!(
-                self.log.log,
-                "Too many connections requested for channel {}", chan_id
-            );
-            self.sessions.remove(&new_chan.id);
-            // self.metrics.borrow().incr("conn.max.conn").ok();
-            // It doesn't make sense to impose a high penalty for this
-            // behavior, but we may want to flag and log the origin
-            // IP for later analytics.
-            // We could also impose a tiny penalty on the IP (if possible)
-            // which would minimally impact accidental occurances, but
-            // add up for major infractors.
-            return 0;
-        }
-        // The group should have two principle parties, the auth and supplicant
-        // Any connection beyond that group should be checked to ensure it's
-        // from a known IP. If a principle that only has one connection and it
-        // drops, it is possible that it can't reconnect, but that's not a bad
-        // thing. We should just let the connection expire as invalid so that
-        // it's not stolen.
-        if group.len() > 2 {
-            if !reconnect_check(&group, &new_chan.remote) {
-                error!(
+            let group = entry.insert(HashMap::new());
+            // self.metrics.borrow().incr("conn.new").ok();
+            if group.len() >= self.settings.borrow().max_channel_connections.into() {
+                warn!(
                     self.log.log,
-                    "Unexpected remote connection from {}",
-                    new_chan.remote.clone().unwrap()
+                    "Too many connections requested for channel";
+                    "channel" => &chan_id.to_string(),
+                    "remote_ip" => &new_session.remote.unwrap_or("Uknown".to_owned()),
                 );
+                self.sessions.remove(&new_session.id);
+                // self.metrics.borrow().incr("conn.max.conn").ok();
+                // It doesn't make sense to impose a high penalty for this
+                // behavior, but we may want to flag and log the origin
+                // IP for later analytics.
+                // We could also impose a tiny penalty on the IP (if possible)
+                // which would minimally impact accidental occurances, but
+                // add up for major infractors.
                 return 0;
             }
+            // The group should have two principle parties, the auth and supplicant
+            // Any connection beyond that group should be checked to ensure it's
+            // from a known IP. If a principle that only has one connection and it
+            // drops, it is possible that it can't reconnect, but that's not a bad
+            // thing. We should just let the connection expire as invalid so that
+            // it's not stolen.
+            if group.len() > 2 {
+                if !reconnect_check(&group, &new_session.remote) {
+                    error!(
+                        self.log.log,
+                        "Unexpected remote connection";
+                        "remote_ip" => &new_session.remote.unwrap_or("Uknown".to_owned()),
+                    );
+                    return 0;
+                }
+            }
+            debug!(self.log.log,
+                "Adding session to channel";
+                "channel" => &chan_id.to_string(),
+                "session" => &new_session.id,
+                "remote_ip" => &new_session.remote.clone().unwrap_or("Uknown".to_owned()),
+                );
+            group.insert(session_id.clone(), new_session);
         }
-        group.insert(session_id.clone(), new_chan);
-        debug!(self.log.log, "channel {}: [{:?}]", chan_id, group,);
         // tell the client what their channel is.
         let jpath = json!({ "link": format!("/v1/ws/{}", chan_id),
                             "channelid": chan_id.to_string() });
@@ -354,10 +352,10 @@ impl Handler<Disconnect> for ChannelServer {
     fn handle(&mut self, msg: Disconnect, ctx: &mut Context<Self>) {
         debug!(
             self.log.log,
-            "Connection dropped for {} : {} {}",
-            &msg.channel.to_simple(),
-            &msg.id,
-            &msg.reason,
+            "Connection dropped";
+            "channel" => &msg.channel.to_simple().to_string(),
+            "session" => &msg.id,
+            "reason" => format!("{}", &msg.reason),
         );
         self.disconnect(&msg.channel, &msg.id);
     }

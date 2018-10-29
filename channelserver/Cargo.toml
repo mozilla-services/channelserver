@@ -1,6 +1,6 @@
 [package]
 name = "channelserver"
-version = "0.4.1"
+version = "0.5.0"
 authors = ["jr conlin<src+pairsona@jrconlin.com"]
 
 [dependencies]
@@ -24,6 +24,7 @@ slog-json = "2.2.0"
 slog-scope = "4.0.1"
 slog-stdlog = "3.0.2"
 slog-term = "2.4.0"
+slog-mozlog-json = "0.1.0"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
