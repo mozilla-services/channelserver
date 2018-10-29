@@ -4,14 +4,6 @@ use std::io;
 use cadence;
 use failure::{Backtrace, Context, Fail};
 
-/*
-#[allow(dead_code)]
-pub type Result<T> = result::Result<T, Error>;
-
-#[allow(dead_code)]
-pub type HandlerResult<T> = result::Result<T, HandlerError>;
-*/
-
 #[derive(Debug)]
 pub struct HandlerError {
     inner: Context<HandlerErrorKind>,
@@ -23,26 +15,13 @@ pub enum HandlerErrorKind {
     XSDataErr(String),
     #[fail(display = "Excess Messages: _0")]
     XSMessageErr(String),
-    #[fail(display = "Channel Shutdown Requested")]
-    ShutdownErr,
     #[fail(display = "IO Error: {:?}", _0)]
     IOError(String),
     #[fail(display = "Could not start metrics: {:?}", _0)]
     MetricsError(String),
     #[fail(display = "Bad remote address: {:?}", _0)]
     BadRemoteAddrError(String),
-    #[fail(display = "Internal server error: {:?}", _0)]
-    InternalServerError(String),
 }
-
-/*
-#[allow(dead_code)]
-impl HandlerError {
-    pub fn kind(&self) -> &HandlerErrorKind {
-        self.inner.get_context()
-    }
-}
-*/
 
 impl Fail for HandlerError {
     fn cause(&self) -> Option<&Fail> {

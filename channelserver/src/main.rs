@@ -20,6 +20,7 @@ extern crate actix;
 extern crate actix_web;
 extern crate slog;
 extern crate slog_async;
+extern crate slog_mozlog_json;
 extern crate uuid;
 #[macro_use]
 extern crate slog_term;
@@ -38,11 +39,11 @@ use uuid::Uuid;
 
 mod logging;
 mod meta;
+mod metrics;
 mod perror;
 mod server;
 mod session;
 mod settings;
-// mod metrics;
 
 /*
  * based on the Actix websocket example ChatServer
@@ -64,11 +65,9 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
             } else {
                 initial_connect = false;
                 Uuid::parse_str(id).unwrap_or_else(|e| {
-                    &req.state().log.do_send(logging::LogMessage {
-                        level: logging::ErrorLevel::Warn,
-                        msg: format!("Invalid ChannelID specified: {:?}", e),
-                        attributes: meta_info.clone().into(),
-                    });
+                    warn!(&req.state().log.log,
+                        "Invalid ChannelID specified: {:?}", e;
+                        "remote_ip" => &meta_info.remote);
                     Uuid::nil()
                 })
             }
@@ -78,15 +77,13 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
     if channel == Uuid::nil() {
         return Ok(HttpResponse::new(http::StatusCode::NOT_FOUND));
     }
-    &req.state().log.do_send(logging::LogMessage {
-        level: logging::ErrorLevel::Info,
-        msg: format!(
-            "Creating session for {} channel: \"{}\"",
-            if initial_connect { "new" } else { "candidate" },
-            channel.to_simple().to_string()
-        ),
-        attributes: meta_info.clone().into(),
-    });
+    info!(
+        &req.state().log.log,
+        "Creating session for {} channel: \"{}\"",
+        if initial_connect {"new"} else {"candiate"},
+        channel.to_simple().to_string();
+        "remote_ip" => &meta_info.remote
+    );
 
     ws::start(
         req,
@@ -152,7 +149,11 @@ fn main() {
     let settings = settings::Settings::new().unwrap();
     let addr = format!("{}:{}", settings.hostname, settings.port);
     let server = Arbiter::start(|_| server::ChannelServer::default());
-    let log = Arbiter::start(|_| logging::MozLogger::default());
+    let log = if settings.human_logs {
+        logging::MozLogger::new_human()
+    } else {
+        logging::MozLogger::new_json()
+    };
     let msettings = settings.clone();
     let mut trusted_list: Vec<ipnet::IpNet> = Vec::new();
     // Add the list of trusted proxies.
@@ -180,10 +181,13 @@ fn main() {
     let ping_interval = settings.heartbeat;
     // Create Http server with websocket support
     HttpServer::new(move || {
-        /*
+        let logging = if msettings.human_logs {
+            logging::MozLogger::new_human()
+        } else {
+            logging::MozLogger::new_json()
+        };
         let metrics  = metrics::metrics_from_opts(
-            &msettings, logging::MozLogger::default()).unwrap();
-        */
+            &msettings, logging).unwrap();
         let iploc = maxminddb::Reader::open(&db_loc).unwrap_or_else(|x| {
             use std::process::exit;
             println!("Could not read geoip database {:?}", x);
@@ -194,7 +198,7 @@ fn main() {
             addr: server.clone(),
             log: log.clone(),
             iploc,
-            // metrics,
+            metrics,
             trusted_proxy_list: trusted_list.clone(),
             connection_lifespan,
             client_timeout,
@@ -216,25 +220,28 @@ mod test {
     use std::str;
 
     use actix_web::test;
-    use actix_web::ws;
     use actix_web::HttpMessage;
-    use futures::Stream;
-    // use cadence::{StatsdClient, NopMetricSink};
+    use cadence::{StatsdClient, NopMetricSink};
 
     use super::*;
     fn get_server() -> test::TestServer {
         let srv = test::TestServer::build_with_state(|| {
             let server = Arbiter::start(|_| server::ChannelServer::default());
-            let log = Arbiter::start(|_| logging::MozLogger::default());
-            let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
             let settings = settings::Settings::new().ok().unwrap();
-            // let metrics = StatsdClient::builder("autopush", NopMetricSink).build();
+            // TODO: derive logging from the settings.human_logs;
+            let log = if settings.human_logs {
+                logging::MozLogger::new_human()
+            } else {
+                logging::MozLogger::default()
+            };
+            let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
+            let metrics = StatsdClient::builder("autopush", NopMetricSink).build();
 
             session::WsChannelSessionState {
                 addr: server.clone(),
-                log: log.clone(),
+                log,
                 iploc,
-                // metrics,
+                metrics,
                 trusted_proxy_list: vec![],
                 connection_lifespan: 60,
                 client_timeout: 30,
@@ -293,40 +300,5 @@ mod test {
         }
     }
 
-    fn read(msg: ws::Message) -> String {
-        match msg {
-            ws::Message::Text(text) => text.as_str().to_owned(),
-            _ => format!("Unexpected data type {:?}", msg),
-        }
-    }
-
-    #[ignore]
-    #[test]
-    fn test_websockets() {
-        /// Test broken.
-        // Something in actix REALLY doesn't like having two sockets talk to
-        // each other. This test will create the sockets, but messages sent
-        // between them get lost somewhere interally.
-        // Sometimes the messages make it through and get processed by
-        // the server, however, most times they simply don't get beyond the
-        // write. In any case, the recipient (reader1) never gets the
-        // message and the test hangs forever.
-        //
-        // for now, use the ../test_chan
-        let mut srv = get_server();
-        let (mut reader1, writer1) = srv.ws_at("/v1/ws/").unwrap();
-        let (item, r) = srv.execute(reader1.into_future()).unwrap();
-        reader1 = r;
-        let link_addr = read(item.unwrap());
-        println!("Connecting to {:?}", link_addr);
-        let (reader2, mut writer2) = srv.ws_at(&link_addr).unwrap();
-        let (item, r) = srv.execute(reader2.into_future()).unwrap();
-        let r2_addr = read(item.unwrap());
-        println!("Connected to {:?}", r2_addr);
-        assert_eq!(link_addr, r2_addr);
-        let test_phrase = "This is a test";
-        writer2.text("writer2");
-        let (item, r) = srv.execute(reader1.into_future()).unwrap();
-        assert_eq!(test_phrase, &read(item.unwrap()));
-    }
+    // To test websocket interface, please use external test_chan
 }

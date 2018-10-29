@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, SocketAddr};
 
-use actix::Addr;
 use actix_web::{http, HttpRequest};
 use http::header::HeaderName;
 use ipnet::IpNet;
@@ -81,70 +80,39 @@ fn get_preferred_language_element(
 }
 
 #[allow(unreachable_patterns)]
-fn handle_city_err(log: Option<&Addr<logging::MozLogger>>, err: &MaxMindDBError) {
+fn handle_city_err(log: &logging::MozLogger, err: &MaxMindDBError) {
     match err {
-        maxminddb::MaxMindDBError::InvalidDatabaseError(s) => log.map(|l| {
-            l.do_send(logging::LogMessage {
-                level: logging::ErrorLevel::Critical,
-                msg: format!("Invalid GeoIP database! {:?}", s),
-                attributes: None,
-            })
-        }),
-        maxminddb::MaxMindDBError::IoError(s) => log.map(|l| {
-            l.do_send(logging::LogMessage {
-                level: logging::ErrorLevel::Critical,
-                msg: format!("Could not read from database file! {:?}", s),
-                attributes: None,
-            })
-        }),
-        maxminddb::MaxMindDBError::MapError(s) => log.map(|l| {
-            l.do_send(logging::LogMessage {
-                level: logging::ErrorLevel::Warn,
-                msg: format!("Mapping error: {:?}", s),
-                attributes: None,
-            })
-        }),
-        maxminddb::MaxMindDBError::DecodingError(s) => log.map(|l| {
-            l.do_send(logging::LogMessage {
-                level: logging::ErrorLevel::Warn,
-                msg: format!("Could not decode mapping result: {:?}", s),
-                attributes: None,
-            })
-        }),
-        maxminddb::MaxMindDBError::AddressNotFoundError(s) => log.map(|l| {
-            l.do_send(logging::LogMessage {
-                level: logging::ErrorLevel::Debug,
-                msg: format!("Could not find address for IP: {:?}", s),
-                attributes: None,
-            })
-        }),
+        maxminddb::MaxMindDBError::InvalidDatabaseError(s) => {
+            error!(log.log, "Invalid GeoIP database! {:?}", s);
+            ::std::process::exit(-1);
+        }
+        maxminddb::MaxMindDBError::IoError(s) => error!(log.log, "Could not read database {:?}", s),
+        maxminddb::MaxMindDBError::MapError(s) => warn!(log.log, "Mapping error: {:?}", s),
+        maxminddb::MaxMindDBError::DecodingError(s) => {
+            warn!(log.log, "Could not decode mapping result: {:?}", s)
+        }
+        maxminddb::MaxMindDBError::AddressNotFoundError(s) => {
+            debug!(log.log, "Could not find address for IP: {:?}", s)
+        }
         // include to future proof against cross compile dependency errors
-        _ => log.map(|l| {
-            l.do_send(logging::LogMessage {
-                level: logging::ErrorLevel::Error,
-                msg: format!("Unknown GeoIP error encountered: {:?}", err),
-                attributes: None,
-            })
-        }),
+        _ => error!(log.log, "Unknown GeoIP error encountered: {:?}", err),
     };
 }
 
 fn get_ua(
     headers: &http::HeaderMap,
-    log: Option<&Addr<logging::MozLogger>>,
+    log: &logging::MozLogger,
     meta: &SenderData,
 ) -> Option<String> {
     if let Some(ua) = headers
         .get(http::header::USER_AGENT)
         .map(|s| match s.to_str() {
             Err(x) => {
-                log.map(|l| {
-                    l.do_send(logging::LogMessage {
-                        level: logging::ErrorLevel::Warn,
-                        msg: format!("Bad UA string: {:?}", x),
-                        attributes: meta.clone().into(),
-                    })
-                });
+                warn!(
+                    log.log,
+                    "Bad UA string: {:?}", x;
+                    "remote_ip" => &meta.remote
+                );
                 // We have to return Some value here.
                 return "".to_owned();
             }
@@ -230,17 +198,15 @@ fn get_remote(
 fn get_location(
     sender: &mut SenderData,
     langs: &Vec<String>,
-    log: Option<&Addr<logging::MozLogger>>,
+    log: &logging::MozLogger,
     iploc: &maxminddb::Reader,
 ) {
     if sender.remote.is_some() {
-        log.map(|l| {
-            l.do_send(logging::LogMessage {
-                level: logging::ErrorLevel::Debug,
-                msg: format!("Looking up IP"),
-                attributes: sender.clone().into(),
-            })
-        });
+        debug!(
+            log.log,
+            "Looking up IP";
+            "remote_ip" => &sender.remote
+        );
         // Strip the port from the remote (if present)
         let remote = sender
             .remote
@@ -315,13 +281,11 @@ fn get_location(
                     }
                 }
             } else {
-                log.map(|l| {
-                    l.do_send(logging::LogMessage {
-                        level: logging::ErrorLevel::Info,
-                        msg: format!("No location info for IP"),
-                        attributes: sender.clone().into(),
-                    })
-                });
+                info!(
+                    log.log,
+                    "No location info for IP";
+                    "remote_ip" => &sender.remote
+                )
             }
         }
     }
@@ -341,11 +305,11 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
         ) {
             Ok(addr) => Some(addr),
             Err(err) => {
-                log.do_send(logging::LogMessage {
-                    level: logging::ErrorLevel::Error,
-                    msg: format!("{:?}", err),
-                    attributes: sender.clone().into(),
-                });
+                error!(
+                    log.log,
+                    "{:?}", err;
+                    "remote_ip" => &sender.remote
+                );
                 None
             }
         };
@@ -354,11 +318,11 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
             Some(l) => {
                 let lang = match l.to_str() {
                     Err(err) => {
-                        log.do_send(logging::LogMessage {
-                            level: logging::ErrorLevel::Warn,
-                            msg: format!("Bad Accept-Language string: {:?}", err),
-                            attributes: sender.clone().into(),
-                        });
+                        warn!(
+                            log.log,
+                            "Bad Accept-Language string: {:?}", err;
+                            "remote_ip" => &sender.remote
+                        );
                         "*"
                     }
                     Ok(ls) => ls,
@@ -367,8 +331,8 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
             }
         };
         // parse user-header for platform info
-        sender.ua = get_ua(&headers, Some(&log), &sender);
-        get_location(&mut sender, &langs, Some(&log), &req.state().iploc);
+        sender.ua = get_ua(&headers, &log, &sender);
+        get_location(&mut sender, &langs, &log, &req.state().iploc);
         sender
     }
 }
@@ -461,34 +425,35 @@ mod test {
         let blank_header = "";
         let mut good_headers = http::HeaderMap::new();
         let meta = SenderData::default();
+        let log = logging::MozLogger::new_human();
         good_headers.insert(
             http::header::USER_AGENT,
             http::header::HeaderValue::from_static(good_header),
         );
         assert_eq!(
             Some(good_header.to_owned()),
-            get_ua(&good_headers, None, &meta)
+            get_ua(&good_headers, &log, &meta)
         );
         let mut blank_headers = http::HeaderMap::new();
         blank_headers.insert(
             http::header::USER_AGENT,
             http::header::HeaderValue::from_static(blank_header),
         );
-        assert_eq!(None, get_ua(&blank_headers, None, &meta));
+        assert_eq!(None, get_ua(&blank_headers, &log, &meta));
         let empty_headers = http::HeaderMap::new();
-        assert_eq!(None, get_ua(&empty_headers, None, &meta));
+        assert_eq!(None, get_ua(&empty_headers, &log, &meta));
     }
 
     #[test]
     fn test_location_good() {
         let test_ip = "63.245.208.195"; // Mozilla
-
+        let log = logging::MozLogger::new_human();
         let langs = vec!["en".to_owned()];
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
         let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
-        get_location(&mut sender, &langs, None, &iploc);
+        get_location(&mut sender, &langs, &log, &iploc);
         assert_eq!(sender.city, Some("Sacramento".to_owned()));
         assert_eq!(sender.region, Some("California".to_owned()));
         assert_eq!(sender.country, Some("United States".to_owned()));
@@ -497,13 +462,13 @@ mod test {
     #[test]
     fn test_location_bad() {
         let test_ip = "192.168.1.1";
-
+        let log = logging::MozLogger::new_human();
         let langs = vec!["en".to_owned()];
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
         let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
-        get_location(&mut sender, &langs, None, &iploc);
+        get_location(&mut sender, &langs, &log, &iploc);
         assert_eq!(sender.city, None);
         assert_eq!(sender.region, None);
         assert_eq!(sender.country, None);
