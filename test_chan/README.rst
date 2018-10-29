@@ -15,8 +15,26 @@ incatnations:
     $ virtualenv .
     $ bin/python setup.py install
 
-This will create ``bin/tester`` which will spin up a version of the
-channel server from ``target/debug`` and run a few integration tests on
-it.
+You can test using ``bin/pytest test_chan``. If you need to configure
+things, you need to set environment variables:
 
-There are still things to be done here, but at least it works.
++------------------------+-------------------------------------+---------------------------------+
+| Variable               | Description                         | Default                         |
++========================+=====================================+=================================+
+|*TEST_APP_PATH*         | Path to channel-server application. | _../target/debug/channelserver_ |
+|                        | Set to "" to skip starting the local|                                 |
+|                        | channel server.                     |                                 |
++------------------------+-------------------------------------+---------------------------------+
+|*TEST_PROTOCOL*         | Websocket protocol to use (ws, wss) | _ws_                            |
++------------------------+-------------------------------------+---------------------------------+
+|*TEST_HOST*             | Host name to connect to             | _localhost_                     |
++------------------------+-------------------------------------+---------------------------------+
+|*TEST_PORT*             | Port number for connection          | _8000_                          |
++------------------------+-------------------------------------+---------------------------------+
+|*TEST_MAX_TRANSACTIONS* | Number of transactions to attempt   | 5                               |
+|                        | for the `test_max_transactions`     |                                 |
++------------------------+-------------------------------------+---------------------------------+
+|*TEST_MAX_DATA*         | Max Data to attempt to send (0 to   | 0                               |
+|                        | skip this test)                     |                                 |
++------------------------+-------------------------------------+---------------------------------+
+
