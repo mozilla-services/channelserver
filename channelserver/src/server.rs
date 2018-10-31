@@ -61,7 +61,7 @@ pub type ChannelId = usize;
 #[rtype(SessionId)]
 pub struct Connect {
     pub addr: Recipient<TextMessage>,
-    pub channel: session::ChannelName,
+    pub channel: session::ChannelType,
     pub remote: Option<String>,
     pub initial_connect: bool,
 }
@@ -69,7 +69,7 @@ pub struct Connect {
 /// Session is disconnected
 #[derive(Message)]
 pub struct Disconnect {
-    pub channel: session::ChannelName,
+    pub channel: session::ChannelType,
     pub id: SessionId,
     pub reason: DisconnectReason,
 }
@@ -84,7 +84,7 @@ pub struct ClientMessage {
     /// Peer message
     pub message: String,
     /// channel name
-    pub channel: session::ChannelName,
+    pub channel: session::ChannelType,
     /// Sender info
     pub sender: meta::SenderData,
 }
@@ -104,7 +104,7 @@ type Channels = HashMap<ChannelId, Channel>;
 /// session. implementation is super primitive
 pub struct ChannelServer {
     // collections of sessions grouped by channel
-    channels: HashMap<session::ChannelName, Channels>,
+    channels: HashMap<session::ChannelType, Channels>,
     // individual connections
     sessions: HashMap<SessionId, Recipient<TextMessage>>,
     // random number generator
@@ -136,7 +136,7 @@ impl ChannelServer {
     /// Send message to all users in the channel except skip_id
     fn send_message(
         &mut self,
-        channel: &session::ChannelName,
+        channel: &session::ChannelType,
         message: &str,
         skip_id: SessionId,
     ) -> Result<(), perror::HandlerError> {
@@ -185,7 +185,7 @@ impl ChannelServer {
         Ok(())
     }
 
-    fn disconnect(&mut self, channel: &session::ChannelName, id: &usize) {
+    fn disconnect(&mut self, channel: &session::ChannelType, id: &usize) {
         if let Some(participants) = self.channels.get_mut(channel) {
             for (pid, info) in participants {
                 if id == pid {
@@ -212,7 +212,7 @@ impl ChannelServer {
     /// Kill a channel and terminate all participants.
     ///
     /// This sends a Terminate to each participant, which forces the connection closed.
-    fn shutdown(&mut self, channel: &session::ChannelName) {
+    fn shutdown(&mut self, channel: &session::ChannelType) {
         if let Some(participants) = self.channels.get(channel) {
             for (id, info) in participants {
                 if let Some(addr) = self.sessions.get(&id) {
@@ -226,7 +226,7 @@ impl ChannelServer {
         debug!(
             self.log.log,
             "Removing channel {}",
-            channel.to_simple().to_string()
+            channel
         );
         self.channels.remove(channel);
     }
@@ -274,11 +274,11 @@ impl Handler<Connect> for ChannelServer {
         debug!(
             self.log.log,
             "New connection";
-            "channel" => &msg.channel.to_simple().to_string(),
+            "channel" => &msg.channel.to_string(),
             "session" => &new_session.id,
             "remote_ip" => &msg.remote,
         );
-        let chan_id = &msg.channel.to_simple();
+        let chan_id = &msg.channel;
         // Is this a new channel request?
         if let Entry::Vacant(entry) = self.channels.entry(msg.channel) {
             // Is this the first time we're requesting this channel?
@@ -353,7 +353,7 @@ impl Handler<Disconnect> for ChannelServer {
         debug!(
             self.log.log,
             "Connection dropped";
-            "channel" => &msg.channel.to_simple().to_string(),
+            "channel" => &msg.channel.to_string(),
             "session" => &msg.id,
             "reason" => format!("{}", &msg.reason),
         );

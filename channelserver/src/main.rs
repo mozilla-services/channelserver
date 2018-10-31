@@ -1,5 +1,6 @@
 //#![feature(custom_derive, try_from)]
 #![allow(unused_variables)]
+extern crate base64;
 extern crate byteorder;
 extern crate bytes;
 extern crate config;
@@ -35,8 +36,8 @@ use std::time::{Duration, Instant};
 use actix::Arbiter;
 use actix_web::server::HttpServer;
 use actix_web::{fs, http, ws, App, Error, HttpRequest, HttpResponse};
-use uuid::Uuid;
 
+mod channelid;
 mod logging;
 mod meta;
 mod metrics;
@@ -61,27 +62,28 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
         Some(id) => {
             // if the id is valid, but not present, treat it like a "None"
             if id.len() == 0 {
-                Uuid::new_v4()
+                channelid::ChannelID::default()
             } else {
                 initial_connect = false;
-                Uuid::parse_str(id).unwrap_or_else(|e| {
+                let channel_id = channelid::ChannelID::from(id);
+                if ! &channel_id.is_valid() {
                     warn!(&req.state().log.log,
-                        "Invalid ChannelID specified: {:?}", e;
+                        "Invalid ChannelID specified: {:?}", id;
                         "remote_ip" => &meta_info.remote);
-                    Uuid::nil()
-                })
+                }
+                channel_id
             }
         }
-        None => Uuid::new_v4(),
+        None => channelid::ChannelID::default()
     };
-    if channel == Uuid::nil() {
+    if ! channel.is_valid() {
         return Ok(HttpResponse::new(http::StatusCode::NOT_FOUND));
     }
     info!(
         &req.state().log.log,
         "Creating session for {} channel: \"{}\"",
         if initial_connect {"new"} else {"candiate"},
-        channel.to_simple().to_string();
+        channel.to_string();
         "remote_ip" => &meta_info.remote
     );
 

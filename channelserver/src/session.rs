@@ -8,13 +8,13 @@ use actix_web::ws;
 use cadence::{StatsdClient};
 use ipnet::IpNet;
 use maxminddb;
-use uuid::Uuid;
 
+use channelid::ChannelID;
 use logging;
 use meta::SenderData;
 use server;
 
-pub type ChannelName = Uuid;
+pub type ChannelType = ChannelID;
 
 /// This is our websocket route state, this state is shared with all route
 /// instances via `HttpContext::state()`
@@ -38,7 +38,7 @@ pub struct WsChannelSession {
     /// Max channel lifespan
     pub expiry: Instant,
     /// joined channel
-    pub channel: ChannelName,
+    pub channel: ChannelType,
     /// peer name
     pub meta: SenderData,
     /// is this the first request for the given channel?
@@ -202,7 +202,7 @@ impl WsChannelSession {
                     ctx.state().log.log,
                     "Client connected too long";
                     "session" => &act.id,
-                    "channel" => &act.channel.to_simple().to_string(),
+                    "channel" => &act.channel.to_string(),
                     "remote_ip" => &act.meta.remote,
                 );
                 ctx.state().addr.do_send(server::Disconnect {
@@ -222,7 +222,7 @@ impl WsChannelSession {
                     ctx.state().log.log,
                     "Client time-out. Disconnecting";
                     "session" => &act.id,
-                    "channel" => &act.channel.to_simple().to_string(),
+                    "channel" => &act.channel.to_string(),
                     "remote_ip" => &act.meta.remote,
                 );
                 ctx.state().addr.do_send(server::Disconnect {
