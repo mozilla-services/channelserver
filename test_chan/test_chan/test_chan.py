@@ -123,7 +123,7 @@ class TestService(unittest.TestCase):
         assert message == body["message"]
         assert "sender" in body
 
-    def terst_full_exchange(self):
+    def test_full_exchange(self):
         (alice, bob) = self.get_connection()
         message = """intro message"""
         alice.send(message)
@@ -136,7 +136,7 @@ class TestService(unittest.TestCase):
         reply = json.loads(bob.recv())
         assert message == reply["message"], "Message didn't match"
 
-    def terst_max_data(self):
+    def test_max_data(self):
         # TODO: Reset the running server to accept max data of some value.
         max_bytes = int(self.opts.max_data)
         if max_bytes == 0:
@@ -149,7 +149,7 @@ class TestService(unittest.TestCase):
         bob.recv()
         assert bob.is_closed(), "Receiver did not close"
 
-    def terst_max_exchange(self):
+    def test_max_exchange(self):
         max_exchange = int(self.opts.max_transactions)
         (alice, bob) = self.get_connection()
         for i in range(0, max_exchange):
@@ -168,7 +168,7 @@ class TestService(unittest.TestCase):
             pass
         assert bob.is_closed(), "Receiver did not close"
 
-    def terst_bad_connection(self):
+    def test_bad_connection(self):
         alice = Connection(url=self.opts.base() + "/v1/ws/")
         bad_link = alice.link.rsplit('/', 1)[0]
         bob_chan = uuid.uuid4().hex

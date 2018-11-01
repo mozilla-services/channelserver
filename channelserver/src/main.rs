@@ -72,13 +72,15 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
                 channelid::ChannelID::default()
             } else {
                 initial_connect = false;
-                let channel_id = channelid::ChannelID::from(id);
-                if !&channel_id.is_valid() {
-                    warn!(&req.state().log.log,
-                        "Invalid ChannelID specified: {:?}", id;
-                        "remote_ip" => &meta_info.remote);
-                    return Ok(HttpResponse::new(http::StatusCode::NOT_FOUND));
-                }
+                let channel_id = match channelid::ChannelID::from_str(id) {
+                    Ok(channelid) => channelid,
+                    Err(err) => {
+                        warn!(&req.state().log.log,
+                            "Invalid ChannelID specified: {:?}", id;
+                            "remote_ip" => &meta_info.remote);
+                        return Ok(HttpResponse::new(http::StatusCode::NOT_FOUND));
+                    }
+                };
                 channel_id
             }
         }

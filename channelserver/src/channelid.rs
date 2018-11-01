@@ -12,18 +12,15 @@ pub struct ChannelID {
 }
 
 impl ChannelID {
-    pub fn is_valid(self) -> bool {
-        !self.value.iter().all(|&b| b == 0)
-    }
-
-    pub fn nil() -> Self {
-        Self {
-            value: [0; CHANNELID_LEN],
-        }
-    }
-
     pub fn to_string(self) -> String {
         base64::encode_config(&self.value, base64::URL_SAFE_NO_PAD)
+    }
+
+    pub fn from_str<'a>(string: &'a str) -> Result<ChannelID, base64::DecodeError> {
+        let bytes = base64::decode_config(string, base64::URL_SAFE_NO_PAD)?;
+        let mut array = [0; 16];
+        array.copy_from_slice(&bytes[..16]);
+        Ok(ChannelID { value: array })
     }
 }
 
@@ -53,41 +50,17 @@ impl Serialize for ChannelID {
     }
 }
 
-impl<'a> From<&'a str> for ChannelID {
-    fn from(string: &str) -> ChannelID {
-        let bytes = match base64::decode_config(string, base64::URL_SAFE_NO_PAD) {
-            Ok(b) => b,
-            Err(err) => {
-                return ChannelID::nil();
-            }
-        };
-        let mut array = [0; 16];
-        array.copy_from_slice(&bytes[..16]);
-        ChannelID { value: array }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
-    fn test_core() {
-        let channel_nil = ChannelID::nil();
-        assert!(!channel_nil.is_valid());
-        let channel_valid = ChannelID::default();
-        assert!(channel_valid.is_valid());
-    }
-
-    #[test]
     fn test_parse() {
         let raw_id = "j6jLPVPeQR6diyrkQinRAQ";
         // From URLSafe b64
-        let chan = ChannelID::from(raw_id);
-        assert!(chan.is_valid());
+        let chan = ChannelID::from_str(raw_id).unwrap();
         assert!(chan.to_string() == raw_id.to_owned());
-        let bad_chan = ChannelID::from("invalid");
-        assert!(!bad_chan.is_valid());
+        ChannelID::from_str("invalid").expect_err("rejected");
         let output = format!("{}", chan);
         assert_eq!("j6jLPVPeQR6diyrkQinRAQ".to_owned(), output);
     }
