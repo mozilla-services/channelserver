@@ -49,12 +49,19 @@ mod settings;
 /*
  * based on the Actix websocket example ChatServer
  */
+fn channel_route_base(
+    req: &HttpRequest<session::WsChannelSessionState>,
+) -> Result<HttpResponse, Error> {
+    info!(&req.state().log.log, "### Channel Route Base!");
+    channel_route(req)
+}
 
 /// Entry point for our route
 fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<HttpResponse, Error> {
     // not sure if it's possible to have actix_web parse the path and have a properly
     // scoped request, since the calling structure is different for the two, so
     // manually extracting the id from the path.
+    info!(&req.state().log.log, "@@@ Channel Route!");
     let mut path: Vec<_> = req.path().split("/").collect();
     let meta_info = meta::SenderData::from(req.clone());
     let mut initial_connect = true;
@@ -66,19 +73,17 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
             } else {
                 initial_connect = false;
                 let channel_id = channelid::ChannelID::from(id);
-                if ! &channel_id.is_valid() {
+                if !&channel_id.is_valid() {
                     warn!(&req.state().log.log,
                         "Invalid ChannelID specified: {:?}", id;
                         "remote_ip" => &meta_info.remote);
+                    return Ok(HttpResponse::new(http::StatusCode::NOT_FOUND));
                 }
                 channel_id
             }
         }
-        None => channelid::ChannelID::default()
+        None => channelid::ChannelID::default(),
     };
-    if ! channel.is_valid() {
-        return Ok(HttpResponse::new(http::StatusCode::NOT_FOUND));
-    }
     info!(
         &req.state().log.log,
         "Creating session for {} channel: \"{}\"",
@@ -122,10 +127,10 @@ fn show_version(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Htt
 
 fn build_app(app: App<session::WsChannelSessionState>) -> App<session::WsChannelSessionState> {
     let mut mapp = app
+        // connecting to an empty channel creates a new one.
+        .resource("/v1/ws/", |r| r.route().f(channel_route_base))
         // websocket to an existing channel
         .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
-        // connecting to an empty channel creates a new one.
-        .resource("/v1/ws/", |r| r.route().f(channel_route))
         .resource("/__version__", |r| {
             r.method(http::Method::GET).f(show_version)
         })
@@ -188,8 +193,7 @@ fn main() {
         } else {
             logging::MozLogger::new_json()
         };
-        let metrics  = metrics::metrics_from_opts(
-            &msettings, logging).unwrap();
+        let metrics = metrics::metrics_from_opts(&msettings, logging).unwrap();
         let iploc = maxminddb::Reader::open(&db_loc).unwrap_or_else(|x| {
             use std::process::exit;
             println!("Could not read geoip database {:?}", x);
@@ -223,7 +227,7 @@ mod test {
 
     use actix_web::test;
     use actix_web::HttpMessage;
-    use cadence::{StatsdClient, NopMetricSink};
+    use cadence::{NopMetricSink, StatsdClient};
 
     use super::*;
     fn get_server() -> test::TestServer {

@@ -5,7 +5,7 @@ use actix::{
     Running, StreamHandler, WrapFuture,
 };
 use actix_web::ws;
-use cadence::{StatsdClient};
+use cadence::StatsdClient;
 use ipnet::IpNet;
 use maxminddb;
 
@@ -13,8 +13,6 @@ use channelid::ChannelID;
 use logging;
 use meta::SenderData;
 use server;
-
-pub type ChannelType = ChannelID;
 
 /// This is our websocket route state, this state is shared with all route
 /// instances via `HttpContext::state()`
@@ -38,7 +36,7 @@ pub struct WsChannelSession {
     /// Max channel lifespan
     pub expiry: Instant,
     /// joined channel
-    pub channel: ChannelType,
+    pub channel: ChannelID,
     /// peer name
     pub meta: SenderData,
     /// is this the first request for the given channel?
@@ -59,7 +57,6 @@ impl Actor for WsChannelSession {
 
         self.hb(ctx);
 
-        self.meta = SenderData::from(ctx.request().clone());
         let meta = self.meta.clone();
         let addr: Addr<Self> = ctx.address();
         ctx.state()

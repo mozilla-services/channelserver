@@ -1,38 +1,46 @@
 use std::fmt;
 
 use base64;
+use rand::RngCore;
 use serde::ser::{Serialize, Serializer};
-use uuid::Uuid;
+
+const CHANNELID_LEN: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct ChannelID {
-    value: Uuid,
+    value: [u8; CHANNELID_LEN],
 }
 
 impl ChannelID {
     pub fn is_valid(self) -> bool {
-        &self.value != &Uuid::nil()
+        !self.value.iter().all(|&b| b == 0)
+    }
+
+    pub fn nil() -> Self {
+        Self {
+            value: [0; CHANNELID_LEN],
+        }
     }
 
     pub fn to_string(self) -> String {
-        base64::encode_config(&self.value.as_bytes(), base64::URL_SAFE_NO_PAD)
+        base64::encode_config(&self.value, base64::URL_SAFE_NO_PAD)
     }
 }
 
 impl Default for ChannelID {
     fn default() -> Self {
-        Self {
-            value: Uuid::new_v4(),
-        }
+        let mut rng = rand::thread_rng();
+        let mut bytes = [0; CHANNELID_LEN];
+        rng.fill_bytes(&mut bytes);
+        Self { value: bytes }
     }
 }
 
 impl fmt::Display for ChannelID {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // calling to_string() causes a stack overflow.
-        let as_b64 = base64::encode_config(self.value.clone().as_bytes(), base64::URL_SAFE_NO_PAD);
-        let as_uuid = self.value.to_string();
-        write!(f, "{} [{}]", as_b64, as_uuid)
+        let as_b64 = base64::encode_config(&self.value, base64::URL_SAFE_NO_PAD);
+        write!(f, "{}", as_b64)
     }
 }
 
@@ -50,25 +58,22 @@ impl<'a> From<&'a str> for ChannelID {
         let bytes = match base64::decode_config(string, base64::URL_SAFE_NO_PAD) {
             Ok(b) => b,
             Err(err) => {
-                return ChannelID { value: Uuid::nil() };
+                return ChannelID::nil();
             }
         };
         let mut array = [0; 16];
         array.copy_from_slice(&bytes[..16]);
-        ChannelID {
-            value: Uuid::from_bytes(array),
-        }
+        ChannelID { value: array }
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use uuid::Uuid;
 
     #[test]
     fn test_core() {
-        let channel_nil = ChannelID { value: Uuid::nil() };
+        let channel_nil = ChannelID::nil();
         assert!(!channel_nil.is_valid());
         let channel_valid = ChannelID::default();
         assert!(channel_valid.is_valid());
@@ -84,9 +89,6 @@ mod test {
         let bad_chan = ChannelID::from("invalid");
         assert!(!bad_chan.is_valid());
         let output = format!("{}", chan);
-        assert_eq!(
-            "j6jLPVPeQR6diyrkQinRAQ [8fa8cb3d-53de-411e-9d8b-2ae44229d101]".to_owned(),
-            output
-        );
+        assert_eq!("j6jLPVPeQR6diyrkQinRAQ".to_owned(), output);
     }
 }
