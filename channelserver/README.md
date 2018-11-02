@@ -29,10 +29,35 @@ $ cargo run
 
 ## API
 
-When connecting to the server as a new session, the first response
-message contains the URI path to send to the counterpart client, This
-is known as the "channel". Currently channels are limited by the
-`max_clients` config option to 2 sessions.
+When connecting to the server as a new session, the first response message contains a JSON response containingthe URI path to send to the counterpart client, this is known as the "channel", and the discrete channelID.
+
+e.g. for a connection to `wss://example.com/v1/ws/`
+```json
+{"channelid":"IZ5B8Wj2qR1NlsNbSXQ2Fg","link":"/v1/ws/IZ5B8Wj2qR1NlsNbSXQ2Fg"}
+```
+Additional connections can be made to the URI specified in `link`.
+
+Messages sent are expected to be URL Safe base64 encoded blocks and are delivered wrapped in a JSON envelope containing the message and sender meta data.
+
+e.g.
+```json
+{"message":"aBc12e....","sender":{"city":"Mountain View","country":"USA","region":"California","remote":"10.0.0.1", }}
+```
+
+This will attempt to localize based on the preferred `Accept-Languages:` HTTP header. If no header is provided, results are unspecified (although probably in German). If an aspect of the location cannot be determined, it is not included in the output.
+
+There are several limitations put in place and controlled by the following options:
+
+`max_exchanges` (env: **PAIR_MAX_EXCHANGES**) - Limit the max number of messages that can be exchanged across a channel. (default: 3)
+
+`conn_lifespan` (env: **PAIR_CONN_LIFESPAN**) - Limit the max lifespan of a give channel to this many seconds. The clock starts when the channel is first created. (default: 300)
+
+`client_timeout` (env: **PAIR_CLIENT_TIMEOUT**) - How often to check to see if a client connection has been closed. This can happen due to any number of reasons, but mostly because the internet hates long lived things. (default: 30)
+
+`max_channel_connections` (env: **PAIR_MAX_CHANNEL_CONNECTIONS**) - Max number of connections to a given channel. *NOTE* after the second connection, subsequent connections must be from one of the previously connected IP addresses. (default: 3)
+
+
+Additional settings are described in `src/settings.rs`
 
 This version of the server will echo data sent to a channel all other
 sessions on a channel. This will change in later versions.
