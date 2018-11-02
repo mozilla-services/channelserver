@@ -1,5 +1,6 @@
 //#![feature(custom_derive, try_from)]
 #![allow(unused_variables)]
+extern crate base64;
 extern crate byteorder;
 extern crate bytes;
 extern crate config;
@@ -35,8 +36,8 @@ use std::time::{Duration, Instant};
 use actix::Arbiter;
 use actix_web::server::HttpServer;
 use actix_web::{fs, http, ws, App, Error, HttpRequest, HttpResponse};
-use uuid::Uuid;
 
+mod channelid;
 mod logging;
 mod meta;
 mod metrics;
@@ -48,12 +49,19 @@ mod settings;
 /*
  * based on the Actix websocket example ChatServer
  */
+fn channel_route_base(
+    req: &HttpRequest<session::WsChannelSessionState>,
+) -> Result<HttpResponse, Error> {
+    info!(&req.state().log.log, "### Channel Route Base!");
+    channel_route(req)
+}
 
 /// Entry point for our route
 fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<HttpResponse, Error> {
     // not sure if it's possible to have actix_web parse the path and have a properly
     // scoped request, since the calling structure is different for the two, so
     // manually extracting the id from the path.
+    info!(&req.state().log.log, "@@@ Channel Route!");
     let mut path: Vec<_> = req.path().split("/").collect();
     let meta_info = meta::SenderData::from(req.clone());
     let mut initial_connect = true;
@@ -61,27 +69,28 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
         Some(id) => {
             // if the id is valid, but not present, treat it like a "None"
             if id.len() == 0 {
-                Uuid::new_v4()
+                channelid::ChannelID::default()
             } else {
                 initial_connect = false;
-                Uuid::parse_str(id).unwrap_or_else(|e| {
-                    warn!(&req.state().log.log,
-                        "Invalid ChannelID specified: {:?}", e;
-                        "remote_ip" => &meta_info.remote);
-                    Uuid::nil()
-                })
+                let channel_id = match channelid::ChannelID::from_str(id) {
+                    Ok(channelid) => channelid,
+                    Err(err) => {
+                        warn!(&req.state().log.log,
+                            "Invalid ChannelID specified: {:?}", id;
+                            "remote_ip" => &meta_info.remote);
+                        return Ok(HttpResponse::new(http::StatusCode::NOT_FOUND));
+                    }
+                };
+                channel_id
             }
         }
-        None => Uuid::new_v4(),
+        None => channelid::ChannelID::default(),
     };
-    if channel == Uuid::nil() {
-        return Ok(HttpResponse::new(http::StatusCode::NOT_FOUND));
-    }
     info!(
         &req.state().log.log,
         "Creating session for {} channel: \"{}\"",
         if initial_connect {"new"} else {"candiate"},
-        channel.to_simple().to_string();
+        channel.to_string();
         "remote_ip" => &meta_info.remote
     );
 
@@ -120,10 +129,10 @@ fn show_version(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Htt
 
 fn build_app(app: App<session::WsChannelSessionState>) -> App<session::WsChannelSessionState> {
     let mut mapp = app
+        // connecting to an empty channel creates a new one.
+        .resource("/v1/ws/", |r| r.route().f(channel_route_base))
         // websocket to an existing channel
         .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
-        // connecting to an empty channel creates a new one.
-        .resource("/v1/ws/", |r| r.route().f(channel_route))
         .resource("/__version__", |r| {
             r.method(http::Method::GET).f(show_version)
         })
@@ -186,8 +195,7 @@ fn main() {
         } else {
             logging::MozLogger::new_json()
         };
-        let metrics  = metrics::metrics_from_opts(
-            &msettings, logging).unwrap();
+        let metrics = metrics::metrics_from_opts(&msettings, logging).unwrap();
         let iploc = maxminddb::Reader::open(&db_loc).unwrap_or_else(|x| {
             use std::process::exit;
             println!("Could not read geoip database {:?}", x);
@@ -221,7 +229,7 @@ mod test {
 
     use actix_web::test;
     use actix_web::HttpMessage;
-    use cadence::{StatsdClient, NopMetricSink};
+    use cadence::{NopMetricSink, StatsdClient};
 
     use super::*;
     fn get_server() -> test::TestServer {

@@ -1,9 +1,10 @@
 [package]
 name = "channelserver"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["jr conlin<src+pairsona@jrconlin.com"]
 
 [dependencies]
+base64 = "0.10"
 config = "0.9"
 failure = "0.1"
 rand = "0.5"
