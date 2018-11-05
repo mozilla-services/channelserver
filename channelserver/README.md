@@ -29,7 +29,7 @@ $ cargo run
 
 ## API
 
-When connecting to the server as a new session, the first response message contains a JSON response containingthe URI path to send to the counterpart client, this is known as the "channel", and the discrete channelID.
+When connecting to the server as a new session, the first response message contains a JSON response containing the URI path to send to the counterpart client, this is known as the "channel", and the discrete channelID.
 
 e.g. for a connection to `wss://example.com/v1/ws/`
 ```json
