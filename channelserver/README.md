@@ -44,7 +44,7 @@ e.g.
 {"message":"aBc12e....","sender":{"city":"Mountain View","country":"USA","region":"California","remote":"10.0.0.1", }}
 ```
 
-This will attempt to localize based on the preferred `Accept-Languages:` HTTP header. If no header is provided, results are unspecified (although probably in German). If an aspect of the location cannot be determined, it is not included in the output.
+This will attempt to localize the geolocation data based on the preferred `Accept-Languages:` HTTP header. If no header is provided, results are unspecified (although probably in German). If an aspect of the location cannot be determined, it is not included in the output.
 
 There are several limitations put in place and controlled by the following options:
 
