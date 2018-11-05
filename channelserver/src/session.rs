@@ -5,7 +5,7 @@ use actix::{
     Running, StreamHandler, WrapFuture,
 };
 use actix_web::ws;
-use cadence::StatsdClient;
+use cadence::{Counted, StatsdClient};
 use ipnet::IpNet;
 use maxminddb;
 
@@ -81,7 +81,7 @@ impl Actor for WsChannelSession {
                             "session" => session_id,
                             "remote_ip" => meta.remote,
                         );
-                        // ctx.state().metrics.incr("conn.create").ok();
+                        ctx.state().metrics.incr("conn.create").ok();
                         act.id = session_id;
                     }
                     // something is wrong with chat server
@@ -207,6 +207,7 @@ impl WsChannelSession {
                     channel: act.channel.clone(),
                     reason: server::DisconnectReason::Timeout,
                 });
+                ctx.state().metrics.incr("conn.expired").unwrap();
                 ctx.stop();
                 return;
             }
@@ -222,6 +223,7 @@ impl WsChannelSession {
                     "channel" => &act.channel.to_string(),
                     "remote_ip" => &act.meta.remote,
                 );
+                ctx.state().metrics.incr("conn.timeout").unwrap();
                 ctx.state().addr.do_send(server::Disconnect {
                     id: act.id,
                     channel: act.channel.clone(),
