@@ -127,14 +127,10 @@ fn get_ua(
     None
 }
 
-fn is_trusted_proxy(proxy_list: &[IpNet], host: &str) -> Result<bool, HandlerError> {
+fn is_trusted_proxy(proxy_list: &[IpNet], host: &IpAddr) -> Result<bool, HandlerError> {
     // Return if an address is NOT part of the allow list
-    let test_addr: IpAddr = match host.parse() {
-        Ok(addr) => addr,
-        Err(e) => return Err(HandlerErrorKind::BadRemoteAddrError(format!("{:?}", e)).into()),
-    };
     for proxy_range in proxy_list {
-        if proxy_range.contains(&test_addr) {
+        if proxy_range.contains(host) {
             return Ok(true);
         }
     }
@@ -145,6 +141,7 @@ fn get_remote(
     peer: &Option<SocketAddr>,
     headers: &http::HeaderMap,
     proxy_list: &[IpNet],
+    log: &logging::MozLogger,
 ) -> Result<String, HandlerError> {
     // Actix determines the connection_info.remote() from the first entry in the
     // Forwarded then X-Fowarded-For, Forwarded-For, then peer name. The problem is that any
@@ -156,10 +153,10 @@ fn get_remote(
     if peer.is_none() {
         return Err(HandlerErrorKind::BadRemoteAddrError("Peer is unspecified".to_owned()).into());
     }
-    let peer_ip = peer.unwrap().ip().to_string();
+    let peer_ip = peer.unwrap().ip();
     // if the peer is not a known proxy, ignore the X-Forwarded-For headers
     if !is_trusted_proxy(proxy_list, &peer_ip)? {
-        return Ok(peer_ip);
+        return Ok(peer_ip.to_string());
     }
 
     // The peer is a known proxy, so take rightmost X-Forwarded-For that is not a trusted proxy.
@@ -167,20 +164,25 @@ fn get_remote(
         Some(header) => {
             match header.to_str() {
                 Ok(hstr) => {
+                    info!(log.log, "Remote IP List: {:?}", hstr);
                     // successive proxies are appeneded to this header.
                     let mut host_list: Vec<&str> = hstr.split(',').collect();
                     host_list.reverse();
                     for host_str in host_list {
-                        let host = host_str.trim().to_owned();
-                        if !is_trusted_proxy(proxy_list, &host)? {
-                            return Ok(host.to_owned());
+                        match host_str.trim().parse::<IpAddr>() {
+                            Ok(addr) => {
+                                if !addr.is_loopback() &&
+                                   !is_trusted_proxy(proxy_list, &addr)? {
+                                    return Ok(addr.to_string());
+                                }
+                            },
+                            Err(err) => {
+                                return Err(HandlerErrorKind::BadRemoteAddrError("Bad IP Specified".to_owned()).into());
+                            }
                         }
-                    }
-                    Err(HandlerErrorKind::BadRemoteAddrError(format!(
-                        "Could not find remote IP in X-Forwarded-For"
-                    ))
-                    .into())
-                }
+                    };
+                    Err(HandlerErrorKind::BadRemoteAddrError("Only proxies specified".to_owned()).into())
+                },
                 Err(err) => Err(HandlerErrorKind::BadRemoteAddrError(format!(
                     "Unknown address in X-Forwarded-For: {:?}",
                     err
@@ -302,6 +304,7 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
             &req.peer_addr(),
             &req.headers(),
             &req.state().trusted_proxy_list,
+            &log,
         ) {
             Ok(addr) => Some(addr),
             Err(err) => {
@@ -485,6 +488,7 @@ mod test {
 
         let true_remote: SocketAddr = "1.2.3.4:0".parse().unwrap();
         let proxy_server: SocketAddr = "192.168.0.4:0".parse().unwrap();
+        let log = logging::MozLogger::new_human();
 
         bad_headers.insert(
             http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
@@ -492,11 +496,11 @@ mod test {
         );
 
         // Proxy only, no XFF header
-        let remote = get_remote(&Some(proxy_server), &empty_headers, &proxy_list);
+        let remote = get_remote(&Some(proxy_server), &empty_headers, &proxy_list, &log);
         assert!(remote.is_err());
 
         // Proxy only, bad XFF header
-        let remote = get_remote(&Some(proxy_server), &bad_headers, &proxy_list);
+        let remote = get_remote(&Some(proxy_server), &bad_headers, &proxy_list, &log);
         assert!(remote.is_err());
 
         // Proxy only, crap XFF header
@@ -504,11 +508,11 @@ mod test {
             http::header::HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap(),
             "invalid".parse().unwrap(),
         );
-        let remote = get_remote(&Some(proxy_server), &bad_headers, &proxy_list);
+        let remote = get_remote(&Some(proxy_server), &bad_headers, &proxy_list, &log);
         assert!(remote.is_err());
 
         // Peer only, no header
-        let remote = get_remote(&Some(true_remote), &empty_headers, &proxy_list);
+        let remote = get_remote(&Some(true_remote), &empty_headers, &proxy_list, &log);
         assert_eq!(remote.unwrap(), "1.2.3.4".to_owned());
 
         headers.insert(
@@ -517,7 +521,7 @@ mod test {
         );
 
         // Peer proxy, fetch from XFF header
-        let remote = get_remote(&Some(proxy_server), &headers, &proxy_list);
+        let remote = get_remote(&Some(proxy_server), &headers, &proxy_list, &log);
         assert_eq!(remote.unwrap(), "1.2.3.4".to_owned());
 
         // Peer proxy, ensure right most XFF client fetched
@@ -526,7 +530,7 @@ mod test {
             "1.2.3.4, 2.3.4.5".parse().unwrap(),
         );
 
-        let remote = get_remote(&Some(proxy_server), &headers, &proxy_list);
+        let remote = get_remote(&Some(proxy_server), &headers, &proxy_list, &log);
         assert_eq!(remote.unwrap(), "2.3.4.5".to_owned());
 
         // Peer proxy, ensure right most non-proxy XFF client fetched
@@ -535,7 +539,7 @@ mod test {
             "1.2.3.4, 2.3.4.5, 192.168.0.10".parse().unwrap(),
         );
 
-        let remote = get_remote(&Some(proxy_server), &headers, &proxy_list);
+        let remote = get_remote(&Some(proxy_server), &headers, &proxy_list, &log);
         assert_eq!(remote.unwrap(), "2.3.4.5".to_owned());
     }
 }

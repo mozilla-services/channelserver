@@ -165,22 +165,39 @@ fn main() {
     };
     let msettings = settings.clone();
     let mut trusted_list: Vec<ipnet::IpNet> = Vec::new();
+    // Add the known private networks to the trusted proxy list
+    trusted_list.push("10.0.0.0/8".parse().unwrap());
+    trusted_list.push("172.16.0.0/12".parse().unwrap());
+    trusted_list.push("192.168.0.0/16".parse().unwrap());
+
     // Add the list of trusted proxies.
     if settings.trusted_proxy_list.len() > 0 {
         for mut proxy in settings.trusted_proxy_list.split(",") {
             proxy = proxy.trim();
             if proxy.len() > 0 {
-                let addr: ipnet::IpNet = proxy.parse().unwrap();
-                trusted_list.push(addr);
+                // ipnet::IpNet only wants CIDRs. Normally that's not a problem, but the
+                // user may specify a single address. In that case, force the single
+                // into a CIDR by giving it a single address scope.
+                let mut fixed = proxy.to_owned();
+                if !proxy.contains("/") {
+                    fixed = format!("{}/32", proxy);
+                    debug!(log.log, "Fixing single address {}", fixed);
+                }
+                match fixed.parse::<ipnet::IpNet>() {
+                    Ok(addr) => trusted_list.push(addr),
+                    Err(err) => {
+                        error!(logger.log, "Ignoring unparsable IP address \"{}\"", proxy);
+                    }
+                };
             }
         }
     }
+    debug!(logger.log, "Trusted Proxies: {:?}", trusted_list);
     // check that the maxmind db is where it should be.
     if !Path::new(&settings.mmdb_loc).exists() {
-        slog_error!(
+        error!(
             logger.log,
-            "Cannot find geoip database: {}",
-            settings.mmdb_loc
+            "Cannot find geoip database: {}", settings.mmdb_loc
         );
         return;
     };
