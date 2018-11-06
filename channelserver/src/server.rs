@@ -8,13 +8,13 @@ use std::fmt;
 use std::time::Instant;
 
 use actix::prelude::{Actor, Context, Handler, Recipient};
-// use cadence::StatsdClient;
+use cadence::{Counted, StatsdClient};
 use rand::{self, Rng, ThreadRng};
 
 use channelid::ChannelID;
 use logging::MozLogger;
 use meta;
-// use metrics;
+use metrics;
 use perror;
 use settings::Settings;
 
@@ -112,21 +112,21 @@ pub struct ChannelServer {
     log: MozLogger,
     // configuration options
     pub settings: RefCell<Settings>,
-    // pub metrics: RefCell<StatsdClient>,
+    pub metrics: RefCell<StatsdClient>,
 }
 
 impl Default for ChannelServer {
     fn default() -> ChannelServer {
         let settings = Settings::new().unwrap();
         let logger = MozLogger::default();
-        // let metrics = metrics::metrics_from_opts(&settings.clone(), logger.clone()).unwrap();
+        let metrics = metrics::metrics_from_opts(&settings.clone(), logger.clone()).unwrap();
         ChannelServer {
             channels: HashMap::new(),
             sessions: HashMap::new(),
             rng: RefCell::new(rand::thread_rng()),
             log: logger.clone(),
             settings: RefCell::new(settings.clone()),
-            // metrics: RefCell::new(metrics.clone())
+            metrics: RefCell::new(metrics.clone())
         }
     }
 }
@@ -150,7 +150,7 @@ impl ChannelServer {
                         "Too much data sent through {}, closing", channel;
                         "remote_ip" => &remote_ip
                     );
-                    // self.metrics.borrow().incr("conn.max.data").ok();
+                    self.metrics.borrow().incr("conn.max.data").ok();
                     let mut remote = "";
                     if let Some(ref rr) = party.remote {
                         remote = rr;
@@ -170,7 +170,7 @@ impl ChannelServer {
                     if let Some(ref rr) = party.remote {
                         remote = rr;
                     }
-                    // self.metrics.borrow().incr("conn.max.msg").ok();
+                    self.metrics.borrow().incr("conn.max.msg").ok();
                     return Err(perror::HandlerErrorKind::XSMessageErr(remote.to_owned()).into());
                 }
                 if party.session_id != skip_id {

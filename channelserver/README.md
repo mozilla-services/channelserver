@@ -62,3 +62,10 @@ Additional settings are described in `src/settings.rs`
 This version of the server will echo data sent to a channel all other
 sessions on a channel. This will change in later versions.
 
+## Stats Collected:
+
+* **conn.create** - New connection created
+* **conn.expired** - Connection terminated, channel lifespan expired
+* **conn.max.data** - Connection terminated due to too much data in channel
+* **conn.max.msg** - Connection terminated due to many messages exchanged through channel
+* **conn.timeout** - Connection terminated because of heartbeat timeout
