@@ -253,7 +253,6 @@ mod test {
         let srv = test::TestServer::build_with_state(|| {
             let server = Arbiter::start(|_| server::ChannelServer::default());
             let settings = settings::Settings::new().ok().unwrap();
-            // TODO: derive logging from the settings.human_logs;
             let log = if settings.human_logs {
                 logging::MozLogger::new_human()
             } else {

@@ -112,7 +112,7 @@ pub struct ChannelServer {
     log: MozLogger,
     // configuration options
     pub settings: RefCell<Settings>,
-    pub metrics: RefCell<StatsdClient>,
+    pub metrics: StatsdClient,
 }
 
 impl Default for ChannelServer {
@@ -125,8 +125,8 @@ impl Default for ChannelServer {
             sessions: HashMap::new(),
             rng: RefCell::new(rand::thread_rng()),
             log: logger.clone(),
-            settings: RefCell::new(settings.clone()),
-            metrics: RefCell::new(metrics.clone())
+            settings: RefCell::new(settings),
+            metrics: metrics.clone(),
         }
     }
 }
@@ -150,7 +150,7 @@ impl ChannelServer {
                         "Too much data sent through {}, closing", channel;
                         "remote_ip" => &remote_ip
                     );
-                    self.metrics.borrow().incr("conn.max.data").ok();
+                    self.metrics.incr("conn.max.data").ok();
                     let mut remote = "";
                     if let Some(ref rr) = party.remote {
                         remote = rr;
@@ -170,7 +170,7 @@ impl ChannelServer {
                     if let Some(ref rr) = party.remote {
                         remote = rr;
                     }
-                    self.metrics.borrow().incr("conn.max.msg").ok();
+                    self.metrics.incr("conn.max.msg").ok();
                     return Err(perror::HandlerErrorKind::XSMessageErr(remote.to_owned()).into());
                 }
                 if party.session_id != skip_id {
@@ -298,7 +298,7 @@ impl Handler<Connect> for ChannelServer {
                 "remote_ip" => &new_session.remote.unwrap_or("Uknown".to_owned()),
             );
             self.sessions.remove(&new_session.session_id);
-            // self.metrics.borrow().incr("conn.max.conn").ok();
+            self.metrics.incr("conn.max.conn").ok();
             // It doesn't make sense to impose a high penalty for this
             // behavior, but we may want to flag and log the origin
             // IP for later analytics.
