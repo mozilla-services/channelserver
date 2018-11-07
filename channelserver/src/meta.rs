@@ -127,14 +127,9 @@ fn get_ua(
     None
 }
 
-fn is_trusted_proxy(proxy_list: &[IpNet], host: &IpAddr) -> Result<bool, HandlerError> {
-    // Return if an address is NOT part of the allow list
-    for proxy_range in proxy_list {
-        if proxy_range.contains(host) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+fn is_trusted_proxy(proxy_list: &[IpNet], host: &IpAddr) -> bool {
+    // Return if an address is part of the allow list
+    proxy_list.iter().any(|range| range.contains(host))
 }
 
 fn get_remote(
@@ -155,7 +150,7 @@ fn get_remote(
     }
     let peer_ip = peer.unwrap().ip();
     // if the peer is not a known proxy, ignore the X-Forwarded-For headers
-    if !is_trusted_proxy(proxy_list, &peer_ip)? {
+    if !is_trusted_proxy(proxy_list, &peer_ip) {
         return Ok(peer_ip.to_string());
     }
 
@@ -172,7 +167,7 @@ fn get_remote(
                         match host_str.trim().parse::<IpAddr>() {
                             Ok(addr) => {
                                 if !addr.is_loopback() &&
-                                   !is_trusted_proxy(proxy_list, &addr)? {
+                                   !is_trusted_proxy(proxy_list, &addr) {
                                     return Ok(addr.to_string());
                                 }
                             },

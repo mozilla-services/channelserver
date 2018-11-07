@@ -186,7 +186,7 @@ fn main() {
                 match fixed.parse::<ipnet::IpNet>() {
                     Ok(addr) => trusted_list.push(addr),
                     Err(err) => {
-                        error!(logger.log, "Ignoring unparsable IP address \"{}\"", proxy);
+                        error!(logger.log, r#"Ignoring unparsable IP address "{}"#, proxy);
                     }
                 };
             }
