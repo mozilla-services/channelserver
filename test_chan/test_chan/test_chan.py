@@ -78,7 +78,7 @@ class Config(object):
 opts = Config()
 
 
-def setUp():
+def setup_module():
     global proc, opts
     envs = os.environ
     if not opts.app_path:
@@ -89,7 +89,7 @@ def setUp():
     time.sleep(0.25)
 
 
-def tearDown():
+def teardown_module():
     global proc
     if not proc:
         return
