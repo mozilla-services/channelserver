@@ -19,9 +19,6 @@ install: channelserver/mmdb/latest test_chan/bin/pytest
 	echo "Done"
 
 test: channelserver/mmdb/latest test_chan/bin/pytest
-	ls -l target/debug/
 	pushd test_chan && \
-	echo "### `pwd`" && \
-	ls -l ../mmdb && \
-	bin/pytest -sv test_chan && \
+	TEST_MMDB_LOC=../channelserver/mmdb/latest/GeoLite2-City.mmdb /bin/pytest -sv test_chan && \
 	popd
