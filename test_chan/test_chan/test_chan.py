@@ -55,9 +55,10 @@ class Config(object):
             "port": "8000",
             "protocol": "ws",
             "app_path": "../target/debug/channelserver",
+            "mmdb_loc": "../mmdb/latest/GeoLite2-City.mmdb",
             "host": 'localhost',
             "max_transactions": "5",
-            "max_data": 0,
+            "max_data": "0",
         }
 
         # extract options from environment
@@ -71,6 +72,14 @@ class Config(object):
         # make the options your dict
         self.__dict__ = opts
 
+    def as_env(self):
+        envs = {}
+        for env in vars(self):
+            if env == "app_path":
+                continue
+            envs["PAIR_{}".format(env.upper())] = self.__dict__[env]
+        return envs
+
     def base(self):
         return "{}://{}:{}".format(self.protocol, self.host, self.port)
 
@@ -80,11 +89,11 @@ opts = Config()
 
 def setup_module():
     global proc, opts
-    envs = os.environ
+    envs = opts.as_env()
     if not opts.app_path:
         return
     cmd = opts.app_path
-    print("Starting {} {}".format(" ".join(envs), cmd))
+    print("=== Starting {} {}".format(envs, cmd))
     proc = subprocess.Popen(cmd, shell=True, env=envs)
     time.sleep(0.25)
 
@@ -94,6 +103,7 @@ def teardown_module():
     if not proc:
         return
     try:
+        print("=== Killing server ")
         parent = psutil.Process(pid=proc.pid)
         for child in parent.children(recursive=True):
             os.kill(child.pid, 9)
