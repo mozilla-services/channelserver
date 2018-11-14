@@ -57,7 +57,7 @@ class Config(object):
             "app_path": "../target/debug/channelserver",
             "mmdb_loc": "../mmdb/latest/GeoLite2-City.mmdb",
             "host": 'localhost',
-            "max_transactions": "5",
+            "max_exchanges": "5",
             "max_data": "0",
         }
 
@@ -159,7 +159,7 @@ class TestService(unittest.TestCase):
         assert bob.is_closed(), "Receiver did not close"
 
     def test_max_exchange(self):
-        max_exchange = int(self.opts.max_transactions)
+        max_exchange = int(self.opts.max_exchanges) + 1
         (alice, bob) = self.get_connection()
         for i in range(0, max_exchange):
             message = "This is message #{}".format(i)

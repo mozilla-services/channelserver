@@ -8,7 +8,7 @@ static PREFIX: &str = "PAIR";
 pub struct Settings {
     pub hostname: String,             // server hostname (localhost)
     pub port: u16,                    // server port (8000)
-    pub max_channel_connections: u8,  // Max connections per channel (3)
+    pub max_channel_connections: u8,  // Max connections per channel (10)
     pub conn_lifespan: u64,           // Total connection lifespan in seconds (300)
     pub client_timeout: u64,          // Client timeout for pong responses (30)
     pub max_exchanges: u8,            // Max number of messages before channel shutdown (3)
@@ -31,7 +31,7 @@ impl Settings {
 
         settings.set_default("debug", false)?;
         settings.set_default("verbose", false)?;
-        settings.set_default("max_exchanges", 3)?;
+        settings.set_default("max_exchanges", 10)?;
         settings.set_default("conn_lifespan", 300)?;
         settings.set_default("client_timeout", 30)?;
         settings.set_default("max_channel_connections", 3)?;
