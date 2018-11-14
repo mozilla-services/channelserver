@@ -258,7 +258,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "channelserver"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "actix 0.7.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "actix-web 0.7.13 (registry+https://github.com/rust-lang/crates.io-index)",

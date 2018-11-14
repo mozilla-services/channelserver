@@ -11,9 +11,9 @@ pub struct HandlerError {
 
 #[derive(Clone, Eq, PartialEq, Debug, Fail)]
 pub enum HandlerErrorKind {
-    #[fail(display = "Excess Data Exchanged: _0")]
+    #[fail(display = "Excess Data Exchanged: {:?}", _0)]
     XSDataErr(String),
-    #[fail(display = "Excess Messages: _0")]
+    #[fail(display = "Excess Messages: {:?}", _0)]
     XSMessageErr(String),
     #[fail(display = "IO Error: {:?}", _0)]
     IOError(String),
