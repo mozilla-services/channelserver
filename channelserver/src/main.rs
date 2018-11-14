@@ -61,7 +61,6 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
     // not sure if it's possible to have actix_web parse the path and have a properly
     // scoped request, since the calling structure is different for the two, so
     // manually extracting the id from the path.
-    info!(&req.state().log.log, "@@@ Channel Route!");
     let mut path: Vec<_> = req.path().split("/").collect();
     let meta_info = meta::SenderData::from(req.clone());
     let mut initial_connect = true;

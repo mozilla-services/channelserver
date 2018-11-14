@@ -2,7 +2,6 @@
 //! And manages available channels. Peers send messages to other peers in same
 //! channel through `ChannelServer`.
 
-use std::cell::RefCell;
 use std::collections::{hash_map::Entry, HashMap};
 use std::fmt;
 use std::time::Instant;
@@ -107,11 +106,11 @@ pub struct ChannelServer {
     // individual connections
     sessions: HashMap<SessionId, Recipient<TextMessage>>,
     // random number generator
-    rng: RefCell<ThreadRng>,
+    rng: ThreadRng,
     // logging object
     log: MozLogger,
     // configuration options
-    pub settings: RefCell<Settings>,
+    pub settings: Settings,
     pub metrics: StatsdClient,
 }
 
@@ -123,9 +122,9 @@ impl Default for ChannelServer {
         ChannelServer {
             channels: HashMap::new(),
             sessions: HashMap::new(),
-            rng: RefCell::new(rand::thread_rng()),
+            rng: rand::thread_rng(),
             log: logger.clone(),
-            settings: RefCell::new(settings),
+            settings: settings,
             metrics: metrics.clone(),
         }
     }
@@ -141,7 +140,7 @@ impl ChannelServer {
     ) -> Result<(), perror::HandlerError> {
         if let Some(participants) = self.channels.get_mut(channel) {
             for party in participants.values_mut() {
-                let max_data: usize = self.settings.borrow().max_data as usize;
+                let max_data: usize = self.settings.max_data as usize;
                 let msg_len = message.len();
                 let remote_ip = party.remote.clone().unwrap_or("Unknown".to_owned());
                 if max_data > 0 && (party.data_exchanged > max_data || msg_len > max_data) {
@@ -158,7 +157,7 @@ impl ChannelServer {
                     return Err(perror::HandlerErrorKind::XSDataErr(remote.to_owned()).into());
                 }
                 party.data_exchanged += msg_len;
-                let msg_count = u8::from(self.settings.borrow().max_exchanges);
+                let msg_count = u8::from(self.settings.max_exchanges);
                 party.msg_count += 1;
                 if msg_count > 0 && party.msg_count > msg_count {
                     warn!(
@@ -256,7 +255,7 @@ impl Handler<Connect> for ChannelServer {
     type Result = SessionId;
 
     fn handle(&mut self, msg: Connect, ctx: &mut Context<Self>) -> Self::Result {
-        let session_id = self.rng.borrow_mut().gen::<SessionId>();
+        let session_id = self.rng.gen::<SessionId>();
         let new_session = Channel {
             // register session with random id
             session_id: session_id.clone(),
@@ -290,7 +289,7 @@ impl Handler<Connect> for ChannelServer {
             entry.insert(HashMap::new());
         };
         let group = self.channels.get_mut(&msg.channel).unwrap();
-        if group.len() >= self.settings.borrow().max_channel_connections.into() {
+        if group.len() >= self.settings.max_channel_connections.into() {
             warn!(
                 self.log.log,
                 "Too many connections requested for channel";
