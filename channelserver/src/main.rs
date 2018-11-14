@@ -31,6 +31,7 @@ extern crate maxminddb;
 extern crate reqwest;
 
 use std::path::Path;
+use std::str;
 use std::time::{Duration, Instant};
 
 use actix::Arbiter;
@@ -146,8 +147,6 @@ fn show_version(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Htt
 fn cspreport(
     req: &HttpRequest<session::WsChannelSessionState>,
 ) -> Box<Future<Item = HttpResponse, Error = Error>> {
-    use std::str;
-
     let log = req.state().log.clone();
     req.body()
         .from_err()
