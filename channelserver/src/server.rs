@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use actix::prelude::{Actor, Context, Handler, Recipient};
 use cadence::{Counted, StatsdClient};
-use rand::{self, Rng, ThreadRng};
+use rand::{self, rngs::ThreadRng, Rng};
 
 use channelid::ChannelID;
 use logging::MozLogger;
