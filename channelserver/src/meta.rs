@@ -344,8 +344,8 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
                 if let Ok(loc_str) = ghead.to_str() {
                     let mut bits = loc_str.split(',').collect::<Vec<&str>>();
                     let mut bi = bits.iter();
-                    sender.region = bi.next().map(|s| String::from(*s));
-                    sender.city = bi.next().map(|s| String::from(*s));
+                    sender.region = bi.next().map(|s| (*s).to_owned());
+                    sender.city = bi.next().map(|s| (*s).to_owned());
                 }
             }
         }

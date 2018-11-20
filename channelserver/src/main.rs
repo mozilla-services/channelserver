@@ -35,12 +35,10 @@ use std::str;
 use std::time::{Duration, Instant};
 
 use actix::Arbiter;
-use actix_web::dev::HttpResponseBuilder;
-use actix_web::middleware::{Middleware, Response};
+use actix_web::middleware;
 use actix_web::server::HttpServer;
 use actix_web::{fs, http, ws, App, AsyncResponder, Error, HttpMessage, HttpRequest, HttpResponse};
 use futures::Future;
-use http::{header, HttpTryFrom};
 
 mod channelid;
 mod logging;
@@ -114,43 +112,6 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
     )
 }
 
-struct Headers;
-
-impl<S> Middleware<S> for Headers {
-    /*
-    // Currently extracting the meta info only when building a channel, rather than
-    // on every request. If that's preferred, use this function:
-    fn start(&self, req: &HttpRequest<S>) -> Result<Started, Error> {
-        Ok(Started::Done)
-    }
-    */
-
-    /// Set the OpSec headers on all responses.
-    fn response(&self, req: &HttpRequest<S>, mut resp: HttpResponse) -> Result<Response, Error> {
-        resp.headers_mut().insert(
-            header::HeaderName::try_from("Content-Security-Policy").unwrap(),
-            header::HeaderValue::from_static("default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; report-uri /__cspreport__")
-        );
-        resp.headers_mut().insert(
-            header::HeaderName::try_from("X-Content-Type-Options").unwrap(),
-            header::HeaderValue::from_static("nosniff"),
-        );
-        resp.headers_mut().insert(
-            header::HeaderName::try_from("X-Frame-Options").unwrap(),
-            header::HeaderValue::from_static("deny"),
-        );
-        resp.headers_mut().insert(
-            header::HeaderName::try_from("X-XSS-Protection").unwrap(),
-            header::HeaderValue::from_static("1; mode=block"),
-        );
-        resp.headers_mut().insert(
-            header::HeaderName::try_from("Strict-Transport-Security").unwrap(),
-            header::HeaderValue::from_static("max-age=63072000"),
-        );
-        Ok(Response::Done(resp))
-    }
-}
-
 fn heartbeat(req: &HttpRequest<session::WsChannelSessionState>) -> Result<HttpResponse, Error> {
     // if there's more to check, add it here.
     let body = json!({"status": "ok", "version": env!("CARGO_PKG_VERSION")});
@@ -188,7 +149,14 @@ fn cspreport(
 
 fn build_app(app: App<session::WsChannelSessionState>) -> App<session::WsChannelSessionState> {
     let mut mapp = app
-        .middleware(Headers)
+        .middleware(
+            middleware::DefaultHeaders::new()
+                .header("Content-Security-Policy", "default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; report-uri /__cspreport__")
+                .header("X-Content-Type-Options", "nosniff")
+                .header("X-Frame-Options", "deny")
+                .header("X-XSS-Protection", "1; mode=block")
+                .header("Strict-Transport-Security", "max-age=63072000")
+        )
         // connecting to an empty channel creates a new one.
         .resource("/v1/ws/", |r| r.route().f(channel_route_base))
         // websocket to an existing channel
