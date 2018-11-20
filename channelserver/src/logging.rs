@@ -47,7 +47,8 @@ impl MozLogger {
                 "{}-{}",
                 env!("CARGO_PKG_NAME"),
                 env!("CARGO_PKG_VERSION")
-            )).msg_type(format!("{}:log", env!("CARGO_PKG_NAME")))
+            ))
+            .msg_type(format!("{}:log", env!("CARGO_PKG_NAME")))
             .build()
             .fuse();
         let drain = slog_async::Async::new(json_drain).build().fuse();

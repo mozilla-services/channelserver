@@ -173,7 +173,8 @@ fn get_remote(
                             Err(err) => {
                                 return Err(HandlerErrorKind::BadRemoteAddrError(
                                     "Bad IP Specified".to_owned(),
-                                ).into());
+                                )
+                                .into());
                             }
                         }
                     }
@@ -185,12 +186,14 @@ fn get_remote(
                 Err(err) => Err(HandlerErrorKind::BadRemoteAddrError(format!(
                     "Unknown address in X-Forwarded-For: {:?}",
                     err
-                )).into()),
+                ))
+                .into()),
             }
         }
         None => Err(HandlerErrorKind::BadRemoteAddrError(format!(
             "No X-Forwarded-For found for proxied connection"
-        )).into()),
+        ))
+        .into()),
     }
 }
 
@@ -213,7 +216,8 @@ fn get_location(
             .map(|mut r| {
                 let end = r.find(':').unwrap_or(r.len());
                 r.drain(..end).collect()
-            }).unwrap_or(String::from(""));
+            })
+            .unwrap_or(String::from(""));
         if let Ok(loc) = remote.parse() {
             if let Ok(city) = iploc.lookup::<City>(loc).map_err(|err| {
                 handle_city_err(log, &err);
