@@ -166,18 +166,23 @@ fn get_remote(
                     for host_str in host_list {
                         match host_str.trim().parse::<IpAddr>() {
                             Ok(addr) => {
-                                if !addr.is_loopback() &&
-                                   !is_trusted_proxy(proxy_list, &addr) {
+                                if !addr.is_loopback() && !is_trusted_proxy(proxy_list, &addr) {
                                     return Ok(addr.to_string());
                                 }
-                            },
+                            }
                             Err(err) => {
-                                return Err(HandlerErrorKind::BadRemoteAddrError("Bad IP Specified".to_owned()).into());
+                                return Err(HandlerErrorKind::BadRemoteAddrError(
+                                    "Bad IP Specified".to_owned(),
+                                )
+                                .into());
                             }
                         }
-                    };
-                    Err(HandlerErrorKind::BadRemoteAddrError("Only proxies specified".to_owned()).into())
-                },
+                    }
+                    Err(
+                        HandlerErrorKind::BadRemoteAddrError("Only proxies specified".to_owned())
+                            .into(),
+                    )
+                }
                 Err(err) => Err(HandlerErrorKind::BadRemoteAddrError(format!(
                     "Unknown address in X-Forwarded-For: {:?}",
                     err
@@ -331,6 +336,19 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
         // parse user-header for platform info
         sender.ua = get_ua(&headers, &log, &sender);
         get_location(&mut sender, &langs, &log, &req.state().iploc);
+
+        // If there's no sender, try pulling the GCP header.
+        // NOTE: This is US/EN only, so localization should come later.
+        if sender.city.is_none() {
+            if let Some(ghead) = headers.get("X-Client-Geo-Location") {
+                if let Ok(loc_str) = ghead.to_str() {
+                    let mut bits = loc_str.split(',').collect::<Vec<&str>>();
+                    let mut bi = bits.iter();
+                    sender.region = bi.next().map(|s| (*s).to_owned());
+                    sender.city = bi.next().map(|s| (*s).to_owned());
+                }
+            }
+        }
         sender
     }
 }

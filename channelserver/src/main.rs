@@ -35,7 +35,7 @@ use std::str;
 use std::time::{Duration, Instant};
 
 use actix::Arbiter;
-use actix_web::dev::HttpResponseBuilder;
+use actix_web::middleware;
 use actix_web::server::HttpServer;
 use actix_web::{fs, http, ws, App, AsyncResponder, Error, HttpMessage, HttpRequest, HttpResponse};
 use futures::Future;
@@ -82,7 +82,7 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
                             "remote_ip" => &meta_info.remote);
                         let mut resp =
                             HttpResponse::new(http::StatusCode::NOT_FOUND).into_builder();
-                        return Ok(add_headers(&mut resp).finish());
+                        return Ok(resp.into());
                     }
                 };
                 channel_id
@@ -112,35 +112,24 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
     )
 }
 
-/// Inject the FoxSec headers into all HTTP responses
-fn add_headers<'a>(resp: &'a mut HttpResponseBuilder) -> &'a mut HttpResponseBuilder {
-    resp.header(
-        "Content-Security-Policy",
-        "default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; report-uri /__cspreport__",
-    )
-    .header("X-Content-Type-Options", "nosniff")
-    .header("X-Frame-Options", "deny")
-    .header("X-XSS-Protection", "1; mode=block")
-    .header("Strict-Transport-Security", "max-age=63072000")
-}
-
 fn heartbeat(req: &HttpRequest<session::WsChannelSessionState>) -> Result<HttpResponse, Error> {
     // if there's more to check, add it here.
     let body = json!({"status": "ok", "version": env!("CARGO_PKG_VERSION")});
-    Ok(add_headers(HttpResponse::Ok().content_type("application/json")).body(body.to_string()))
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(body.to_string()))
 }
 
 fn lbheartbeat(req: &HttpRequest<session::WsChannelSessionState>) -> Result<HttpResponse, Error> {
     // load balance heartbeat. Doesn't matter what's returned, aside from a 200
-    Ok(add_headers(&mut HttpResponse::Ok()).finish())
+    Ok(HttpResponse::Ok().into())
 }
 
 fn show_version(req: &HttpRequest<session::WsChannelSessionState>) -> Result<HttpResponse, Error> {
     // Return the contents of the version.json file.
-    Ok(
-        add_headers(&mut HttpResponse::Ok().content_type("application/json"))
-            .body(include_str!("../version.json")),
-    )
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(include_str!("../version.json")))
 }
 
 /// Dump the "CSP report" as a warning message.
@@ -153,13 +142,21 @@ fn cspreport(
         .and_then(move |body| {
             let bstr = str::from_utf8(&body).unwrap();
             warn!(log.log, "CSP Report"; "report"=> bstr);
-            Ok(add_headers(&mut HttpResponse::Ok()).finish())
+            Ok(HttpResponse::Ok().into())
         })
         .responder()
 }
 
 fn build_app(app: App<session::WsChannelSessionState>) -> App<session::WsChannelSessionState> {
     let mut mapp = app
+        .middleware(
+            middleware::DefaultHeaders::new()
+                .header("Content-Security-Policy", "default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; report-uri /__cspreport__")
+                .header("X-Content-Type-Options", "nosniff")
+                .header("X-Frame-Options", "deny")
+                .header("X-XSS-Protection", "1; mode=block")
+                .header("Strict-Transport-Security", "max-age=63072000")
+        )
         // connecting to an empty channel creates a new one.
         .resource("/v1/ws/", |r| r.route().f(channel_route_base))
         // websocket to an existing channel
