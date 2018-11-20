@@ -17,8 +17,11 @@ matrix:
         - rust: nightly
     fast_finish: true
 
+before_script:
+    - rustup component add rustfmt-preview
 
 script:
+    - cargo fmt -- --check
     - cargo build --all --exclude=spake2_demo
     - cargo test --all --exclude=spake2_demo
     - make test

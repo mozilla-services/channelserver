@@ -371,11 +371,9 @@ impl Handler<ClientMessage> for ChannelServer {
                 &json!({
                     "message": &msg.message,
                     "sender": &msg.sender,
-                })
-                .to_string(),
+                }).to_string(),
                 msg.id,
-            )
-            .is_err()
+            ).is_err()
         {
             self.shutdown(&msg.channel)
         }

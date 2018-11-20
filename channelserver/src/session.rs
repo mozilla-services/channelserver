@@ -66,8 +66,7 @@ impl Actor for WsChannelSession {
                 channel: self.channel.clone(),
                 remote: self.meta.remote.clone(),
                 initial_connect: self.initial_connect,
-            })
-            .into_actor(self)
+            }).into_actor(self)
             .then(|res, act, ctx| {
                 match res {
                     Ok(session_id) => {
@@ -95,8 +94,7 @@ impl Actor for WsChannelSession {
                     }
                 }
                 fut::ok(())
-            })
-            .wait(ctx);
+            }).wait(ctx);
     }
 
     /// Stop Session and alert all others in channel to shut down.
