@@ -4,24 +4,27 @@ cache: cargo
 install:
 - make install
 
-rust:
-    - stable
-    - nightly
-
 env:
     global:
       - RUST_TEST_THREADS=1
 
 matrix:
+    include:
+        - rust: stable
+          env: CARGO_FMT_CHECK=true
+        - rust: nightly
     allow_failures:
         - rust: nightly
     fast_finish: true
 
 before_script:
-    - rustup component add rustfmt-preview
+    - |
+        if [ "${CARGO_FMT_CHECK:-false}" = "true" ]; then
+            rustup component add rustfmt-preview
+        fi
 
 script:
-    - cargo fmt -- --check
+    - if [ "${CARGO_FMT_CHECK:-false}" = "true" ]; then cargo fmt -- --check; fi
     - cargo build --all --exclude=spake2_demo
     - cargo test --all --exclude=spake2_demo
     - make test
