@@ -93,7 +93,7 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
     info!(
         &req.state().log.log,
         "Creating session for {} channel: \"{}\"",
-        if initial_connect {"new"} else {"candiate"},
+        if initial_connect {"new"} else {"candidate"},
         channel.to_string();
         "remote_ip" => &meta_info.remote
     );
