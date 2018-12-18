@@ -279,11 +279,11 @@ impl Handler<Connect> for ChannelServer {
             // Is this the first time we're requesting this channel?
             if !&msg.initial_connect {
                 warn!(
-                        self.log.log,
-                        "Attempt to connect to unknown channel";
-                        "channel" => &chan_id.to_string(),
-                        "remote_ip" => &msg.remote.clone().unwrap_or("Unknown".to_owned()),
-                    );
+                    self.log.log,
+                    "Attempt to connect to unknown channel";
+                    "channel" => &chan_id.to_string(),
+                    "remote_ip" => &msg.remote.clone().unwrap_or("Unknown".to_owned()),
+                );
                 return 0;
             }
             entry.insert(HashMap::new());
@@ -324,11 +324,11 @@ impl Handler<Connect> for ChannelServer {
             }
         };
         debug!(self.log.log,
-            "Adding session to channel";
-            "channel" => &chan_id.to_string(),
-            "session" => &new_session.session_id,
-            "remote_ip" => &new_session.remote.clone().unwrap_or("Uknown".to_owned()),
-            );
+        "Adding session to channel";
+        "channel" => &chan_id.to_string(),
+        "session" => &new_session.session_id,
+        "remote_ip" => &new_session.remote.clone().unwrap_or("Uknown".to_owned()),
+        );
         group.insert(session_id.clone(), new_session);
         // tell the client what their channel is.
         let jpath = json!({ "link": format!("/v1/ws/{}", chan_id),
@@ -371,9 +371,11 @@ impl Handler<ClientMessage> for ChannelServer {
                 &json!({
                     "message": &msg.message,
                     "sender": &msg.sender,
-                }).to_string(),
+                })
+                .to_string(),
                 msg.id,
-            ).is_err()
+            )
+            .is_err()
         {
             self.shutdown(&msg.channel)
         }

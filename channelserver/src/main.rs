@@ -143,7 +143,8 @@ fn cspreport(
             let bstr = str::from_utf8(&body).unwrap();
             warn!(log.log, "CSP Report"; "report"=> bstr);
             Ok(HttpResponse::Ok().into())
-        }).responder()
+        })
+        .responder()
 }
 
 fn build_app(app: App<session::WsChannelSessionState>) -> App<session::WsChannelSessionState> {
@@ -261,7 +262,8 @@ fn main() {
         };
 
         build_app(App::with_state(state))
-    }).bind(&addr)
+    })
+    .bind(&addr)
     .unwrap()
     .start();
 
@@ -313,9 +315,11 @@ mod test {
             .resource("/v1/ws/", |r| r.route().f(channel_route))
             .resource("/__version__", |r| {
                 r.method(http::Method::GET).f(show_version)
-            }).resource("/__heartbeat__", |r| {
+            })
+            .resource("/__heartbeat__", |r| {
                 r.method(http::Method::GET).f(heartbeat)
-            }).resource("/__lbheartbeat__", |r| {
+            })
+            .resource("/__lbheartbeat__", |r| {
                 r.method(http::Method::GET).f(lbheartbeat)
             });
         })
