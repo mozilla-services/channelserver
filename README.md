@@ -9,7 +9,10 @@ between devices or applications.
 Contains:
 
 - [channelserver](./channelserver/) - websocket message relay server.
-- [spake2_demo](./spake2_demo/) - Client rust SPAKE2 auth demo.
 - [test_chan](./test_chan/) - python based external integration tester
   for channelserver.
+
+For client code that uses this facility to create
+an encrypted and authenticated channel between two
+client devices, see [fxa-pairing-channel](https://github.com/mozilla/fxa-pairing-channel).
 
