@@ -63,7 +63,7 @@ impl Actor for WsChannelSession {
             .addr
             .send(server::Connect {
                 addr: addr.recipient(),
-                channel: self.channel.clone(),
+                channel: self.channel,
                 remote: self.meta.remote.clone(),
                 initial_connect: self.initial_connect,
             })
@@ -160,7 +160,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
                     id: self.id,
                     message_type: server::MessageType::Text,
                     message: m.to_owned(),
-                    channel: self.channel.clone(),
+                    channel: self.channel,
                     sender: self.meta.clone(),
                 })
             }
@@ -174,7 +174,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
             ws::Message::Close(_) => {
                 ctx.state().addr.do_send(server::Disconnect {
                     id: self.id,
-                    channel: self.channel.clone(),
+                    channel: self.channel,
                     reason: server::DisconnectReason::None,
                 });
                 debug!(
@@ -204,7 +204,7 @@ impl WsChannelSession {
                 );
                 ctx.state().addr.do_send(server::Disconnect {
                     id: act.id,
-                    channel: act.channel.clone(),
+                    channel: act.channel,
                     reason: server::DisconnectReason::Timeout,
                 });
                 ctx.state().metrics.incr("conn.expired").unwrap();
@@ -226,7 +226,7 @@ impl WsChannelSession {
                 ctx.state().metrics.incr("conn.timeout").unwrap();
                 ctx.state().addr.do_send(server::Disconnect {
                     id: act.id,
-                    channel: act.channel.clone(),
+                    channel: act.channel,
                     reason: server::DisconnectReason::ConnectionError,
                 });
                 ctx.stop();

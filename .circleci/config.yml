@@ -6,6 +6,34 @@
 #
 version: 2
 jobs:
+  test:
+    docker:
+      - image: circleci/rust:latest
+    steps:
+      - checkout
+      - run:
+          name: Set up rust and do base checks
+          command: |
+            rustup install stable
+            rustup default stable
+            rustup update
+            rustup component add rustfmt
+            rustup component add clippy
+            cargo install cargo-audit
+            rustc --version
+      - run:
+          name: Do rust checks
+          command: |
+            cargo audit
+            cargo fmt -- --check
+            cargo clippy --all -- -D warnings
+      - run:
+          name: Do integration and unit tests
+          command: |
+            pushd channelserver
+            bash fetch_mmdb.bash
+            popd
+            cargo test --all --verbose -- --nocapture
   build:
     docker:
       - image: docker:18.02.0-ce
@@ -44,6 +72,7 @@ jobs:
           key: v1-{{ .Branch }}-{{ .Environment.CIRCLE_TAG }}-{{ epoch }}
           paths:
             - /cache/docker.tar
+
 
   deploy:
     docker:
@@ -85,6 +114,10 @@ workflows:
   version: 2
   build-deploy:
     jobs:
+      - test:
+          filters:
+            tags:
+              only: /.*/
       - build:
           filters:
             tags:

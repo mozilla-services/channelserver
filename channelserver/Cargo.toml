@@ -16,7 +16,6 @@ tokio-core = "0.1"
 env_logger = "0.5"
 
 uuid = { version = "0.7", features = ["serde", "v4"] }
-uap-rust = "0.0.4"
 
 cadence = "0.15.1"
 slog = {version="2.4", features=["release_max_level_debug"]}

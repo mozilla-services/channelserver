@@ -17,7 +17,7 @@ use metrics;
 use perror;
 use settings::Settings;
 
-pub const EOL: &'static str = "\x04";
+pub const EOL: &str = "\x04";
 
 #[derive(Serialize, Debug, PartialEq)]
 pub enum MessageType {
@@ -124,7 +124,7 @@ impl Default for ChannelServer {
             sessions: HashMap::new(),
             rng: rand::thread_rng(),
             log: logger.clone(),
-            settings: settings,
+            settings,
             metrics: metrics.clone(),
         }
     }
@@ -142,7 +142,7 @@ impl ChannelServer {
             for party in participants.values_mut() {
                 let max_data: usize = self.settings.max_data as usize;
                 let msg_len = message.len();
-                let remote_ip = party.remote.clone().unwrap_or("Unknown".to_owned());
+                let remote_ip = party.remote.clone().unwrap_or_else(|| "Unknown".to_owned());
                 if max_data > 0 && (party.data_exchanged > max_data || msg_len > max_data) {
                     warn!(
                         self.log.log,
@@ -157,7 +157,7 @@ impl ChannelServer {
                     return Err(perror::HandlerErrorKind::XSDataErr(remote.to_owned()).into());
                 }
                 party.data_exchanged += msg_len;
-                let msg_count = u8::from(self.settings.max_exchanges);
+                let msg_count = self.settings.max_exchanges;
                 party.msg_count += 1;
                 if msg_count > 0 && party.msg_count > msg_count {
                     warn!(
@@ -183,10 +183,10 @@ impl ChannelServer {
         Ok(())
     }
 
-    fn disconnect(&mut self, channel: &ChannelID, id: &usize) {
+    fn disconnect(&mut self, channel: &ChannelID, id: usize) {
         if let Some(participants) = self.channels.get_mut(channel) {
             for (pid, info) in participants {
-                if id == pid {
+                if id == *pid {
                     if let Some(addr) = self.sessions.get(&id) {
                         // send a control message to force close
                         addr.do_send(TextMessage(MessageType::Terminate, EOL.to_owned()))
@@ -197,8 +197,8 @@ impl ChannelServer {
         }
         let mut do_shutdown = false;
         if let Some(participants) = self.channels.get_mut(channel) {
-            participants.remove(id);
-            if participants.len() == 0 {
+            participants.remove(&id);
+            if participants.is_empty() {
                 do_shutdown = true;
             }
         }
@@ -229,7 +229,7 @@ impl ChannelServer {
 /// Is a previously connected client trying to reconnect?
 fn reconnect_check(group: &Channels, new_remote: &Option<String>) -> bool {
     if let Some(ref req_ip) = new_remote {
-        for (_, participant) in group {
+        for participant in group.values() {
             println!("Checking {:?}", &participant.remote);
             if let Some(ref loc_ip) = &participant.remote {
                 if req_ip == loc_ip {
@@ -238,7 +238,7 @@ fn reconnect_check(group: &Channels, new_remote: &Option<String>) -> bool {
             }
         }
     }
-    return false;
+    false
 }
 
 /// Make actor from `ChannelServer`
@@ -256,9 +256,11 @@ impl Handler<Connect> for ChannelServer {
 
     fn handle(&mut self, msg: Connect, ctx: &mut Context<Self>) -> Self::Result {
         let session_id = self.rng.gen::<SessionId>();
+        let remote_ip = &msg.remote.clone().unwrap_or_else(|| "Unknown".to_owned());
+        let chan_id = &msg.channel.to_string();
         let new_session = Channel {
             // register session with random id
-            session_id: session_id.clone(),
+            session_id,
             started: Instant::now(),
             msg_count: 0,
             data_exchanged: 0,
@@ -269,11 +271,10 @@ impl Handler<Connect> for ChannelServer {
         debug!(
             self.log.log,
             "New connection";
-            "channel" => &msg.channel.to_string(),
+            "channel" => chan_id,
             "session" => &new_session.session_id,
-            "remote_ip" => &msg.remote,
+            "remote_ip" => remote_ip,
         );
-        let chan_id = &msg.channel;
         // Is this a new channel request?
         if let Entry::Vacant(entry) = self.channels.entry(msg.channel) {
             // Is this the first time we're requesting this channel?
@@ -281,20 +282,28 @@ impl Handler<Connect> for ChannelServer {
                 warn!(
                     self.log.log,
                     "Attempt to connect to unknown channel";
-                    "channel" => &chan_id.to_string(),
-                    "remote_ip" => &msg.remote.clone().unwrap_or("Unknown".to_owned()),
+                    "channel" => chan_id,
+                    "remote_ip" => remote_ip,
                 );
                 return 0;
             }
             entry.insert(HashMap::new());
         };
-        let group = self.channels.get_mut(&msg.channel).unwrap();
+        let group = self.channels.get_mut(&msg.channel);
+        if group.is_none() {
+            trace!(self.log.log,
+            "No group information found for channel";
+            "channel" => chan_id,
+            "remote_ip" => remote_ip);
+            return 0;
+        }
+        let group = group.unwrap();
         if group.len() >= self.settings.max_channel_connections.into() {
             warn!(
                 self.log.log,
                 "Too many connections requested for channel";
-                "channel" => &chan_id.to_string(),
-                "remote_ip" => &new_session.remote.unwrap_or("Uknown".to_owned()),
+                "channel" => chan_id,
+                "remote_ip" => remote_ip,
             );
             self.sessions.remove(&new_session.session_id);
             self.metrics.incr("conn.max.conn").ok();
@@ -313,30 +322,36 @@ impl Handler<Connect> for ChannelServer {
         // drops, it is possible that it can't reconnect, but that's not a bad
         // thing. We should just let the connection expire as invalid so that
         // it's not stolen.
-        if group.len() > 2 {
-            if !reconnect_check(&group, &new_session.remote) {
-                error!(
-                    self.log.log,
-                    "Unexpected remote connection";
-                    "remote_ip" => &new_session.remote.unwrap_or("Uknown".to_owned()),
-                );
-                return 0;
-            }
+        if group.len() > 2 && !reconnect_check(&group, &new_session.remote) {
+            error!(
+                self.log.log,
+                "Unexpected remote connection";
+                "remote_ip" => remote_ip,
+            );
+            return 0;
         };
         debug!(self.log.log,
         "Adding session to channel";
-        "channel" => &chan_id.to_string(),
+        "channel" => chan_id,
         "session" => &new_session.session_id,
-        "remote_ip" => &new_session.remote.clone().unwrap_or("Uknown".to_owned()),
+        "remote_ip" => remote_ip,
         );
-        group.insert(session_id.clone(), new_session);
+        group.insert(session_id, new_session);
         // tell the client what their channel is.
         let jpath = json!({ "link": format!("/v1/ws/{}", chan_id),
-                            "channelid": chan_id.to_string() });
-        &msg.addr
-            .do_send(TextMessage(MessageType::Text, jpath.to_string()));
-
-        // send id back
+                            "channelid": chan_id });
+        if msg
+            .addr
+            .do_send(TextMessage(MessageType::Text, jpath.to_string()))
+            .is_err()
+        {
+            warn!(
+                self.log.log,
+                "Could not send path to channel";
+                "channel" => chan_id,
+                "remote_ip" => remote_ip
+            )
+        };
         session_id
     }
 }
@@ -353,7 +368,7 @@ impl Handler<Disconnect> for ChannelServer {
             "session" => &msg.id,
             "reason" => format!("{}", &msg.reason),
         );
-        self.disconnect(&msg.channel, &msg.id);
+        self.disconnect(&msg.channel, msg.id);
     }
 }
 
@@ -362,8 +377,8 @@ impl Handler<ClientMessage> for ChannelServer {
     type Result = ();
 
     fn handle(&mut self, msg: ClientMessage, _: &mut Context<Self>) {
-        if &msg.message_type == &MessageType::Terminate {
-            return self.disconnect(&msg.channel, &msg.id);
+        if msg.message_type == MessageType::Terminate {
+            return self.disconnect(&msg.channel, msg.id);
         }
         if self
             .send_message(
@@ -415,4 +430,5 @@ mod test {
         assert!(reconnect_check(&test_group, &Some("10.0.0.1".to_owned())) == false);
         assert!(reconnect_check(&test_group, &Some("127.0.0.2".to_owned())) == true);
     }
+
 }
