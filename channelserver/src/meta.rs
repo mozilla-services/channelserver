@@ -371,7 +371,7 @@ impl Into<Option<HashMap<String, String>>> for SenderData {
         if let Some(val) = self.country {
             map.insert("remote_country".to_owned(), val);
         }
-        if map.is_empty() {
+        if !map.is_empty() {
             return Some(map);
         }
         None
