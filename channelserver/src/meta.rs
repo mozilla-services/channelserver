@@ -31,21 +31,21 @@ fn preferred_languages(alheader: String) -> Vec<String> {
     let default_lang = String::from("en");
     let mut lang_tree: BTreeMap<String, String> = BTreeMap::new();
     let mut i = 0;
-    alheader.split(",").for_each(|l| {
-        if l.contains(";") {
-            let weight: Vec<&str> = l.split(";").collect();
+    alheader.split(',').for_each(|l| {
+        if l.contains(';') {
+            let weight: Vec<&str> = l.split(';').collect();
             let lang = weight[0].to_ascii_lowercase();
             let pref = weight[1].to_ascii_lowercase();
             lang_tree.insert(String::from(pref.trim()), String::from(lang.trim()));
         } else {
-            lang_tree.insert(
-                format!("q=1.{:02}", i),
-                String::from(l.to_ascii_lowercase()),
-            );
+            lang_tree.insert(format!("q=1.{:02}", i), l.to_ascii_lowercase());
             i += 1;
         }
     });
-    let mut langs: Vec<String> = lang_tree.values().map(|l| l.to_owned()).collect();
+    let mut langs: Vec<String> = lang_tree
+        .values()
+        .map(std::borrow::ToOwned::to_owned)
+        .collect();
     langs.reverse();
     langs.push(default_lang);
     langs
@@ -54,20 +54,20 @@ fn preferred_languages(alheader: String) -> Vec<String> {
 // Return the element that most closely matches the preferred language.
 // This rounds up from the dialect if possible.
 fn get_preferred_language_element(
-    langs: &Vec<String>,
+    langs: &[String],
     elements: BTreeMap<String, String>,
 ) -> Option<String> {
     for lang in langs {
         // It's a wildcard, so just return the first possible choice.
         if lang == "*" {
-            return elements.values().into_iter().next().map(|e| e.to_owned());
+            return elements.values().next().map(std::borrow::ToOwned::to_owned);
         }
         if elements.contains_key(lang) {
             if let Some(element) = elements.get(lang.as_str()) {
                 return Some(element.to_string());
             }
         }
-        if lang.contains("-") {
+        if lang.contains('-') {
             let (lang, _) = lang.split_at(2);
             if elements.contains_key(lang) {
                 if let Some(element) = elements.get(lang) {
@@ -114,12 +114,12 @@ fn get_ua(
                     "remote_ip" => &meta.remote
                 );
                 // We have to return Some value here.
-                return "".to_owned();
+                "".to_owned()
             }
             Ok(s) => s.to_owned(),
         })
     {
-        if ua == "".to_owned() {
+        if ua == "" {
             // If it's blank, it's None.
             return None;
         }
@@ -156,7 +156,7 @@ fn get_remote(
     }
 
     // The peer is a known proxy, so take rightmost X-Forwarded-For that is not a trusted proxy.
-    match headers.get(HeaderName::from_lowercase("x-forwarded-for".as_bytes()).unwrap()) {
+    match headers.get(HeaderName::from_lowercase(b"x-forwarded-for").unwrap()) {
         Some(header) => {
             match header.to_str() {
                 Ok(hstr) => {
@@ -191,16 +191,16 @@ fn get_remote(
                 .into()),
             }
         }
-        None => Err(HandlerErrorKind::BadRemoteAddrError(format!(
-            "No X-Forwarded-For found for proxied connection"
-        ))
+        None => Err(HandlerErrorKind::BadRemoteAddrError(
+            "No X-Forwarded-For found for proxied connection".to_owned(),
+        )
         .into()),
     }
 }
 
 fn get_location(
     sender: &mut SenderData,
-    langs: &Vec<String>,
+    langs: &[String],
     log: &logging::MozLogger,
     iploc: &maxminddb::Reader,
 ) {
@@ -215,10 +215,10 @@ fn get_location(
             .remote
             .clone()
             .map(|mut r| {
-                let end = r.find(':').unwrap_or(r.len());
+                let end = r.find(':').unwrap_or_else(|| r.len());
                 r.drain(..end).collect()
             })
-            .unwrap_or(String::from(""));
+            .unwrap_or_else(|| String::from(""));
         if let Ok(loc) = remote.parse() {
             if let Ok(city) = iploc.lookup::<City>(loc).map_err(|err| {
                 handle_city_err(log, &err);
@@ -275,11 +275,10 @@ fn get_location(
                     sender.country = get_preferred_language_element(&langs, names);
                 }
                 // because consistency is overrated.
-                for subdivision in city.subdivisions {
-                    if let Some(subdivision) = subdivision.get(0) {
+                if let Some(subdivisions) = city.subdivisions {
+                    if let Some(subdivision) = subdivisions.get(0) {
                         if let Some(names) = subdivision.clone().names {
                             sender.region = get_preferred_language_element(&langs, names);
-                            break;
                         }
                     }
                 }
@@ -372,7 +371,7 @@ impl Into<Option<HashMap<String, String>>> for SenderData {
         if let Some(val) = self.country {
             map.insert("remote_country".to_owned(), val);
         }
-        if map.len() > 0 {
+        if !map.is_empty() {
             return Some(map);
         }
         None

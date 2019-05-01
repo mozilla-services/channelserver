@@ -16,7 +16,7 @@ impl ChannelID {
         base64::encode_config(&self.value, base64::URL_SAFE_NO_PAD)
     }
 
-    pub fn from_str<'a>(string: &'a str) -> Result<ChannelID, base64::DecodeError> {
+    pub fn from_str(string: &str) -> Result<ChannelID, base64::DecodeError> {
         let bytes = base64::decode_config(string, base64::URL_SAFE_NO_PAD)?;
         let mut array = [0; 16];
         array.copy_from_slice(&bytes[..16]);

@@ -5,7 +5,6 @@ extern crate byteorder;
 extern crate bytes;
 extern crate config;
 extern crate env_logger;
-#[macro_use]
 extern crate failure;
 extern crate futures;
 extern crate rand;
@@ -64,17 +63,17 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
     // not sure if it's possible to have actix_web parse the path and have a properly
     // scoped request, since the calling structure is different for the two, so
     // manually extracting the id from the path.
-    let mut path: Vec<_> = req.path().split("/").collect();
+    let mut path: Vec<_> = req.path().split('/').collect();
     let meta_info = meta::SenderData::from(req.clone());
     let mut initial_connect = true;
     let channel = match path.pop() {
         Some(id) => {
             // if the id is valid, but not present, treat it like a "None"
-            if id.len() == 0 {
+            if id.is_empty() {
                 channelid::ChannelID::default()
             } else {
                 initial_connect = false;
-                let channel_id = match channelid::ChannelID::from_str(id) {
+                match channelid::ChannelID::from_str(id) {
                     Ok(channelid) => channelid,
                     Err(err) => {
                         warn!(&req.state().log.log,
@@ -84,8 +83,7 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
                             HttpResponse::new(http::StatusCode::NOT_FOUND).into_builder();
                         return Ok(resp.into());
                     }
-                };
-                channel_id
+                }
             }
         }
         None => channelid::ChannelID::default(),
@@ -105,7 +103,7 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
             id: 0,
             hb: Instant::now(),
             expiry: Instant::now() + Duration::from_secs(req.state().connection_lifespan),
-            channel: channel,
+            channel,
             meta: meta_info,
             initial_connect,
         },
@@ -181,7 +179,7 @@ fn build_app(app: App<session::WsChannelSessionState>) -> App<session::WsChannel
 }
 
 fn main() {
-    let _ = env_logger::init();
+    env_logger::init();
     let sys = actix::System::new("channelserver");
 
     // Start chat server actor in separate thread
@@ -202,15 +200,15 @@ fn main() {
     trusted_list.push("192.168.0.0/16".parse().unwrap());
 
     // Add the list of trusted proxies.
-    if settings.trusted_proxy_list.len() > 0 {
-        for mut proxy in settings.trusted_proxy_list.split(",") {
+    if !settings.trusted_proxy_list.is_empty() {
+        for mut proxy in settings.trusted_proxy_list.split(',') {
             proxy = proxy.trim();
-            if proxy.len() > 0 {
+            if !proxy.is_empty() {
                 // ipnet::IpNet only wants CIDRs. Normally that's not a problem, but the
                 // user may specify a single address. In that case, force the single
                 // into a CIDR by giving it a single address scope.
                 let mut fixed = proxy.to_owned();
-                if !proxy.contains("/") {
+                if !proxy.contains('/') {
                     fixed = format!("{}/32", proxy);
                     debug!(log.log, "Fixing single address {}", fixed);
                 }

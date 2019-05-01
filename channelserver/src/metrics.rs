@@ -15,7 +15,7 @@ pub fn metrics_from_opts(
     log: logging::MozLogger,
 ) -> Result<StatsdClient, perror::HandlerError> {
     let name = env!("CARGO_PKG_NAME");
-    let builder = if settings.statsd_host.len() > 0 {
+    let builder = if !settings.statsd_host.is_empty() {
         let socket = UdpSocket::bind("0.0.0.0:0")?;
         socket.set_nonblocking(true)?;
         let elements: Vec<&str> = settings.statsd_host.splitn(2, ':').collect();

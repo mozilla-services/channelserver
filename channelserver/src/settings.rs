@@ -47,7 +47,7 @@ impl Settings {
         settings.set_default("heartbeat", 5)?;
         settings.set_default("human_logs", false)?;
         // Get the run environment
-        let env = env::var("RUN_MODE").unwrap_or("development".to_owned());
+        let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".to_owned());
         // start with any local config file.
         settings.merge(File::with_name(&format!("config/{}", env)).required(false))?;
         // Add/overwrite with the environments
