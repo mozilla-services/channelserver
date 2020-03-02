@@ -12,7 +12,7 @@ pub struct ChannelID {
 }
 
 impl ChannelID {
-    pub fn to_string(self) -> String {
+    pub fn as_string(self) -> String {
         base64::encode_config(&self.value, base64::URL_SAFE_NO_PAD)
     }
 
@@ -46,7 +46,7 @@ impl Serialize for ChannelID {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        serializer.serialize_str(&self.as_string())
     }
 }
 
@@ -59,7 +59,7 @@ mod test {
         let raw_id = "j6jLPVPeQR6diyrkQinRAQ";
         // From URLSafe b64
         let chan = ChannelID::from_str(raw_id).unwrap();
-        assert!(chan.to_string() == raw_id.to_owned());
+        assert!(chan.as_string() == raw_id.to_owned());
         ChannelID::from_str("invalid").expect_err("rejected");
         let output = format!("{}", chan);
         assert_eq!("j6jLPVPeQR6diyrkQinRAQ".to_owned(), output);
