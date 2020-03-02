@@ -4,7 +4,7 @@ use std::io;
 
 use actix::prelude::{Actor, Context, Handler};
 
-use slog;
+use slog::{slog_o, slog_crit, slog_error, slog_warn, slog_info, slog_debug};
 use slog::Drain;
 use slog_async;
 use slog_mozlog_json::MozLogJson;
@@ -53,7 +53,7 @@ impl MozLogger {
             .fuse();
         let drain = slog_async::Async::new(json_drain).build().fuse();
         Self {
-            log: slog::Logger::root(drain, o!()).new(o!()),
+            log: slog::Logger::root(drain, slog_o!()).new(slog_o!()),
         }
     }
 
@@ -67,7 +67,7 @@ impl MozLogger {
         let drain = slog_async::Async::new(drain).build().fuse();
 
         Self {
-            log: slog::Logger::root(drain, o!()).new(o!()),
+            log: slog::Logger::root(drain, slog_o!()).new(slog_o!()),
         }
     }
 }
@@ -82,7 +82,7 @@ impl Actor for MozLogger {
     type Context = Context<Self>;
 }
 
-#[derive(Message, Debug)]
+#[derive(Debug)]
 pub struct LogMessage {
     pub level: ErrorLevel,
     pub msg: String,
@@ -106,6 +106,7 @@ impl Display for LogMessage {
     }
 }
 
+/*
 impl Handler<LogMessage> for MozLogger {
     type Result = ();
 
@@ -119,3 +120,4 @@ impl Handler<LogMessage> for MozLogger {
         };
     }
 }
+*/

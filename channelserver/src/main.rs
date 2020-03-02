@@ -1,74 +1,48 @@
-//#![feature(custom_derive, try_from)]
-#![allow(unused_variables)]
-extern crate base64;
-extern crate byteorder;
-extern crate bytes;
-extern crate config;
-extern crate env_logger;
-extern crate failure;
-extern crate futures;
-extern crate rand;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate serde_json;
-extern crate tokio_core;
-extern crate tokio_io;
-#[macro_use]
-extern crate actix;
-extern crate actix_web;
-extern crate slog;
-extern crate slog_async;
-extern crate slog_mozlog_json;
-extern crate uuid;
-#[macro_use]
-extern crate slog_term;
-extern crate cadence;
-extern crate ipnet;
-extern crate maxminddb;
-extern crate reqwest;
-
-use std::path::Path;
-use std::str;
 use std::time::{Duration, Instant};
+use std::collections::HashMap;
+use std::path::Path;
 
-use actix::Arbiter;
-use actix_web::middleware;
-use actix_web::server::HttpServer;
-use actix_web::{fs, http, ws, App, AsyncResponder, Error, HttpMessage, HttpRequest, HttpResponse};
-use futures::Future;
+use cadence::StatsdClient;
+use futures::future::{Future};
+use serde_json::Value;
+use slog::{debug, error, info, warn};
+use slog_scope;
+use ipnet::IpNet;
 
+use actix::*;
+use actix_rt::System;
+use actix_files as fs;
+use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_web_actors::ws;
+
+#[macro_use]
 mod channelid;
-mod logging;
-mod meta;
-mod metrics;
-mod perror;
+mod error;
 mod server;
-mod session;
 mod settings;
+mod logging;
+mod metrics;
+mod meta;
 
-/*
- * based on the Actix websocket example ChatServer
- */
-fn channel_route_base(
-    req: &HttpRequest<session::WsChannelSessionState>,
-) -> Result<HttpResponse, Error> {
-    info!(&req.state().log.log, "### Channel Route Base!");
-    channel_route(req)
-}
+/// How often heartbeat pings are sent
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+/// How long before lack of client response causes a timeout
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Entry point for our route
-fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<HttpResponse, Error> {
-    // not sure if it's possible to have actix_web parse the path and have a properly
-    // scoped request, since the calling structure is different for the two, so
-    // manually extracting the id from the path.
-    let mut path: Vec<_> = req.path().split('/').collect();
-    let meta_info = meta::SenderData::from(req.clone());
+async fn chat_route(
+    req: HttpRequest,
+    stream: web::Payload,
+    srv: web::Data<Addr<server::ChannelServer>>,
+    meta: meta::SenderData,
+) -> Result<HttpResponse, Error> {
+    let state = req.app_data::<WsChannelSessionState>().unwrap();
+    let mut path:Vec<&str> = req.path().split('/').collect();
+    let log = logging::MozLogger::default();
+    let metrics = state.metrics.clone();
     let mut initial_connect = true;
     let channel = match path.pop() {
         Some(id) => {
-            // if the id is valid, but not present, treat it like a "None"
             if id.is_empty() {
                 channelid::ChannelID::default()
             } else {
@@ -76,137 +50,410 @@ fn channel_route(req: &HttpRequest<session::WsChannelSessionState>) -> Result<Ht
                 match channelid::ChannelID::from_str(id) {
                     Ok(channelid) => channelid,
                     Err(err) => {
-                        warn!(&req.state().log.log,
-                            "Invalid ChannelID specified: {:?}", id;
-                            "remote_ip" => &meta_info.remote);
-                        let mut resp =
-                            HttpResponse::new(http::StatusCode::NOT_FOUND).into_builder();
-                        return Ok(resp.into());
+                        warn!(state.log.log, "Routing error: {:?}", err);
+                        channelid::ChannelID::default()
                     }
                 }
             }
-        }
-        None => channelid::ChannelID::default(),
+        },
+        None => channelid::ChannelID::default()
     };
-    info!(
-        &req.state().log.log,
-        "Creating session for {} channel: \"{}\"",
-        if initial_connect {"new"} else {"candidate"},
-        channel.to_string();
-        "remote_ip" => &meta_info.remote
-    );
-
-    // Cannot apply headers here.
     ws::start(
-        req,
-        session::WsChannelSession {
+        WsChannelSession {
             id: 0,
             hb: Instant::now(),
-            expiry: Instant::now() + Duration::from_secs(req.state().connection_lifespan),
+            initial_connect: true,
+            expiry: Duration::from_secs(state.connection_lifespan),
             channel,
-            meta: meta_info,
-            initial_connect,
+            addr: srv.get_ref().clone(),
+            meta,
+            log,
+            metrics,
         },
+        &req,
+        stream,
     )
 }
 
-fn heartbeat(req: &HttpRequest<session::WsChannelSessionState>) -> Result<HttpResponse, Error> {
+pub fn heartbeat(_req: HttpRequest) -> impl Future<Output = Result<HttpResponse, Error>> {
     // if there's more to check, add it here.
-    let body = json!({"status": "ok", "version": env!("CARGO_PKG_VERSION")});
-    Ok(HttpResponse::Ok()
+    let mut checklist = HashMap::new();
+    checklist.insert(
+        "version", Value::String(env!("CARGO_PKG_VERSION").to_owned())
+    );
+    checklist.insert("status", Value::String("ok".to_owned()));
+    HttpResponse::Ok()
         .content_type("application/json")
-        .body(body.to_string()))
+        .json(checklist)
 }
 
-fn lbheartbeat(req: &HttpRequest<session::WsChannelSessionState>) -> Result<HttpResponse, Error> {
+fn lbheartbeat(_req: HttpRequest) -> impl Future<Output = Result<HttpResponse, Error>> {
     // load balance heartbeat. Doesn't matter what's returned, aside from a 200
-    Ok(HttpResponse::Ok().into())
+    HttpResponse::Ok()
 }
 
-fn show_version(req: &HttpRequest<session::WsChannelSessionState>) -> Result<HttpResponse, Error> {
+fn show_version(_req: HttpRequest) -> impl Future<Output = Result<HttpResponse, Error>> {
     // Return the contents of the version.json file.
-    Ok(HttpResponse::Ok()
+    HttpResponse::Ok()
         .content_type("application/json")
-        .body(include_str!("../version.json")))
+        .body(include_str!("../version.json"))
 }
 
-/// Dump the "CSP report" as a warning message.
-fn cspreport(
-    req: &HttpRequest<session::WsChannelSessionState>,
-) -> Box<Future<Item = HttpResponse, Error = Error>> {
-    let log = req.state().log.clone();
-    req.body()
-        .from_err()
-        .and_then(move |body| {
-            let bstr = str::from_utf8(&body).unwrap();
-            warn!(log.log, "CSP Report"; "report"=> bstr);
-            Ok(HttpResponse::Ok().into())
-        })
-        .responder()
+pub struct WsChannelSessionState {
+    pub addr: Addr<server::ChannelServer>,
+    pub log: logging::MozLogger,
+    pub iploc: maxminddb::Reader<Vec<u8>>,
+    pub metrics: StatsdClient,
+    pub trusted_proxy_list: Vec<IpNet>,
+    pub connection_lifespan: u64,
+    pub client_timeout: u64,
+    pub ping_interval: u64,
 }
 
-fn build_app(app: App<session::WsChannelSessionState>) -> App<session::WsChannelSessionState> {
-    let mut mapp = app
-        .middleware(
-            middleware::DefaultHeaders::new()
-                .header("Content-Security-Policy", "default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; report-uri /__cspreport__")
-                .header("X-Content-Type-Options", "nosniff")
-                .header("X-Frame-Options", "deny")
-                .header("X-XSS-Protection", "1; mode=block")
-                .header("Strict-Transport-Security", "max-age=63072000")
-        )
-        // connecting to an empty channel creates a new one.
-        .resource("/v1/ws/", |r| r.route().f(channel_route_base))
-        // websocket to an existing channel
-        .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
-        .resource("/__version__", |r| {
-            r.method(http::Method::GET).f(show_version)
-        })
-        .resource("/__heartbeat__", |r| {
-            r.method(http::Method::GET).f(heartbeat)
-        })
-        .resource("/__lbheartbeat__", |r| {
-            r.method(http::Method::GET).f(lbheartbeat)
-        })
-        .resource("/__cspreport__", |r| {
-            r.method(http::Method::POST).f(cspreport)
-        });
-    // Only add a static handler if the static directory exists.
-    if Path::new("static/").exists() {
-        mapp = mapp.handler("/static/", fs::StaticFiles::new("static/").unwrap());
+
+struct WsChannelSession {
+    /// unique session id
+    id: usize,
+    /// Client must send ping at least once per 10 seconds (CLIENT_TIMEOUT),
+    /// otherwise we drop connection.
+    hb: Instant,
+    // max channel lifespan
+    expiry: Duration,
+    /// joined channel
+    channel: channelid::ChannelID,
+    /// peer name
+    meta: meta::SenderData,
+    /// Chat server
+    addr: Addr<server::ChannelServer>,
+    // first time connecting on this channel?
+    initial_connect: bool,
+
+    // logging pointer
+    log: logging::MozLogger,
+    metrics: cadence::StatsdClient,
+}
+
+impl Actor for WsChannelSession {
+    type Context = ws::WebsocketContext<Self>;
+
+    /// Method is called on actor start.
+    /// We register ws session with ChatServer
+    fn started(&mut self, ctx: &mut Self::Context) {
+        // we'll start heartbeat process on session start.
+        self.hb(ctx);
+
+        let meta = self.meta.clone();
+
+        // register self in chat server. `AsyncContext::wait` register
+        // future within context, but context waits until this future resolves
+        // before processing any other events.
+        // HttpContext::state() is instance of WsChannelSessionState, state is shared
+        // across all routes within application
+        let addr = ctx.address();
+        self.addr
+            .send(server::Connect {
+                addr: addr.recipient(),
+                initial_connect: true,
+                remote: meta.remote,
+            })
+            .into_actor(self)
+            .then(|res, act, ctx| {
+                match res {
+                    // TODO: Add logging. currently produces static lifetime errors.
+                    Ok(session_id) => {
+                        if session_id == 0 {
+                            ctx.stop()
+                        }
+                        /*
+                        debug!(
+                            self.log.log,
+                            "Starting new session";
+                            "session" => session_id,
+                            "remote_ip" => meta.remote,
+                        );
+                        */
+                        act.id = res.expect("Error getting session")
+                    },
+                    Err(err) => {
+                        /*
+                        error!(self.log.log,
+                            "Unhandled Error: {:?}", err;
+                            "remote_ip" => meta.remote,
+                            );
+                        */
+                        ctx.stop()
+                    },
+                }
+                fut::ready(())
+            })
+            .wait(ctx);
     }
-    mapp
+
+    fn stopping(&mut self, _ctx: &mut Self::Context) -> Running {
+        // notify chat server
+        /*
+        debug!(
+            "Killing session";
+            "session" => &self.id,
+            "remote_ip" => &self.meta.remote,
+        );
+        */
+        self.addr.do_send(server::Disconnect {
+             channel: self.channel,
+             id: self.id,
+            reason: server::DisconnectReason::None,
+        });
+        Running::Stop
+    }
 }
 
-fn main() {
-    env_logger::init();
-    let sys = actix::System::new("channelserver");
+/// Handle messages from chat server, we simply send it to peer websocket
+impl Handler<server::Message> for WsChannelSession {
+    type Result = ();
 
-    // Start chat server actor in separate thread
-    let logger = logging::MozLogger::new();
+    fn handle(&mut self, msg: server::Message, ctx: &mut Self::Context) {
+        match msg.0 {
+            server::MessageType::Terminate => {
+                /*
+                debug!(
+                    "Closing session";
+                    "session" => &self.id,
+                    "remote_ip" => &self.meta.remote,
+                );
+                */
+                ctx.stop();
+            },
+            server::MessageType::Text => ctx.text(msg.1),
+        }
+    }
+}
+
+/// WebSocket message handler
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChannelSession {
+    fn handle(
+        &mut self,
+        msg: Result<ws::Message, ws::ProtocolError>,
+        ctx: &mut Self::Context,
+    ) {
+        /*
+        debug!(
+            ctx.log.log,
+            "Websocket Message: {:?}", msg;
+            "remote_ip" => &self.meta.remote_ip
+        );
+        */
+        let msg = match msg {
+            Err(_) => {
+                ctx.stop();
+                return;
+            }
+            Ok(msg) => msg,
+        };
+        /*
+        debug!(
+            ctx.log
+            "WEBSOCKET MESSAGE: {:?}", msg;
+            "remote_ip" => &self.meta.remote
+        );
+        */
+        match msg {
+            ws::Message::Ping(msg) => {
+                self.hb = Instant::now();
+                ctx.pong(&msg);
+            }
+            ws::Message::Pong(_) => {
+                self.hb = Instant::now();
+            }
+            ws::Message::Text(text) => {
+                self.hb = Instant::now();
+                let m = text.trim();
+                self.addr.do_send(server::ClientMessage {
+                    id: self.id,
+                    message_type: server::MessageType::Text,
+                    msg: m.to_owned(),
+                    channel: self.channel.clone(),
+                    sender: self.meta.clone()
+                })
+
+                /*
+                let m = text.trim();
+                // we check for /sss type of messages
+                if m.starts_with('/') {
+                    let v: Vec<&str> = m.splitn(2, ' ').collect();
+                    match v[0] {
+                        "/list" => {
+                            // Send ListRooms message to chat server and wait for
+                            // response
+                            println!("List rooms");
+                            self.addr
+                                .send(server::ListRooms)
+                                .into_actor(self)
+                                .then(|res, _, ctx| {
+                                    match res {
+                                        Ok(rooms) => {
+                                            for room in rooms {
+                                                ctx.text(room);
+                                            }
+                                        }
+                                        _ => println!("Something is wrong"),
+                                    }
+                                    fut::ready(())
+                                })
+                                .wait(ctx)
+                            // .wait(ctx) pauses all events in context,
+                            // so actor wont receive any new messages until it get list
+                            // of rooms back
+                        }
+                        "/join" => {
+                            if v.len() == 2 {
+                                self.room = v[1].to_owned();
+                                self.addr.do_send(server::Join {
+                                    id: self.id,
+                                    name: self.room.clone(),
+                                });
+
+                                ctx.text("joined");
+                            } else {
+                                ctx.text("!!! room name is required");
+                            }
+                        }
+                        "/name" => {
+                            if v.len() == 2 {
+                                self.name = Some(v[1].to_owned());
+                            } else {
+                                ctx.text("!!! name is required");
+                            }
+                        }
+                        _ => ctx.text(format!("!!! unknown command: {:?}", m)),
+                    }
+                } else {
+                    let msg = if let Some(ref name) = self.name {
+                        format!("{}: {}", name, m)
+                    } else {
+                        m.to_owned()
+                    };
+                    // send message to chat server
+                    self.addr.do_send(server::ClientMessage {
+                        id: self.id,
+                        msg,
+                        room: self.room.clone(),
+                    })
+                }
+                */
+            }
+            ws::Message::Binary(_) => info!(
+                self.log.log,
+                "Unexpected binary";
+                "remote_ip" => &self.meta.remote,
+            ),
+            ws::Message::Close(_) => {
+                self.addr.do_send(server::Disconnect{
+                    id: self.id,
+                    channel: self.channel,
+                    reason: server::DisconnectReason::None
+                });
+                debug!(
+                    self.log.log,
+                    "Shutting down session";
+                    "session" => &self.id,
+                    "remote_ip" => &self.meta.remote,
+                );
+                ctx.stop();
+            }
+            ws::Message::Continuation(_) => {
+                ctx.stop();
+            }
+            ws::Message::Nop => (),
+        }
+    }
+}
+
+impl WsChannelSession {
+    /// helper method that sends ping to client every second.
+    ///
+    /// also this method checks heartbeats from client
+    fn hb(&self, ctx: &mut ws::WebsocketContext<Self>) {
+        ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
+            // check client heartbeats
+            if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
+                // heartbeat timed out
+                /*
+                info!(
+                    self.log.log,
+                    "Client connected too long";
+                    "session" => &act.id,
+                    "channel" => &act.channel.to_string(),
+                    "remote_ip" => &act.meta.remote,
+                );
+                */
+
+                // notify chat server
+                act.addr.do_send(server::Disconnect {
+                    id: act.id,
+                    channel: act.channel.clone(),
+                    reason: server::DisconnectReason::Timeout
+                });
+                /* TODO: Fix metrics
+                ctx.state().metrics.incr("conn.expired").unwrap();
+                */
+
+                // stop actor
+                ctx.stop();
+                return;
+            }
+            if Instant::now().duration_since(act.hb)
+                > act.expiry
+                {
+                    /*
+                    info!(
+                        self.log.log,
+                        "Client time-out. Disconnecting";
+                        "session" => &act.id,
+                        "channel" => &act.channel.to_string(),
+                        "remote_ip" => &act.meta.remote,
+                    );
+                    */
+                    // self.metrics.incr("conn.timeout").unwrap();
+                    act.addr.do_send(server::Disconnect{
+                        id: act.id,
+                        channel: act.channel.clone(),
+                        reason: server::DisconnectReason::Timeout,
+                    });
+                    ctx.stop();
+                    return;
+                }
+            // Send the ping.
+            ctx.ping(b"");
+        });
+    }
+}
+
+pub struct Server;
+
+#[actix_rt::main]
+async fn main() -> std::io::Result<()> {
+    env_logger::init();
+
     let settings = settings::Settings::new().unwrap();
+    let sys = System::new("channelserver");
     let addr = format!("{}:{}", settings.hostname, settings.port);
-    let server = Arbiter::start(|_| server::ChannelServer::default());
-    let log = if settings.human_logs {
+    let log = if settings.human_logs{
         logging::MozLogger::new_human()
     } else {
         logging::MozLogger::new_json()
     };
-    let msettings = settings.clone();
     let mut trusted_list: Vec<ipnet::IpNet> = Vec::new();
+    let server = server::ChannelServer::new(&settings, &log).start();
+
     // Add the known private networks to the trusted proxy list
     trusted_list.push("10.0.0.0/8".parse().unwrap());
     trusted_list.push("172.16.0.0/12".parse().unwrap());
     trusted_list.push("192.168.0.0/16".parse().unwrap());
 
-    // Add the list of trusted proxies.
     if !settings.trusted_proxy_list.is_empty() {
         for mut proxy in settings.trusted_proxy_list.split(',') {
             proxy = proxy.trim();
             if !proxy.is_empty() {
-                // ipnet::IpNet only wants CIDRs. Normally that's not a problem, but the
-                // user may specify a single address. In that case, force the single
-                // into a CIDR by giving it a single address scope.
                 let mut fixed = proxy.to_owned();
                 if !proxy.contains('/') {
                     fixed = format!("{}/32", proxy);
@@ -215,143 +462,49 @@ fn main() {
                 match fixed.parse::<ipnet::IpNet>() {
                     Ok(addr) => trusted_list.push(addr),
                     Err(err) => {
-                        error!(logger.log, r#"Ignoring unparsable IP address "{}"#, proxy);
+                        error!(log.log, r#"Ignoring unparsable IP address "{}"#, proxy);
                     }
                 };
             }
         }
     }
-    debug!(logger.log, "Trusted Proxies: {:?}", trusted_list);
-    // check that the maxmind db is where it should be.
+
+    debug!(&log.log, "Trusted Proxies: {:?}", trusted_list);
+
     if !Path::new(&settings.mmdb_loc).exists() {
-        error!(
-            logger.log,
-            "Cannot find geoip database: {}", settings.mmdb_loc
-        );
-        return;
+        error!(&log.log, "Cannot find geoip database: {}", settings.mmdb_loc);
+        return Err(
+            std::io::Error::new(std::io::ErrorKind::NotFound, "missing geoip database".to_owned())
+        )
     };
     let db_loc = settings.mmdb_loc.clone();
-    let connection_lifespan = settings.conn_lifespan;
-    let client_timeout = settings.client_timeout;
-    let ping_interval = settings.heartbeat;
+
+
     // Create Http server with websocket support
     HttpServer::new(move || {
-        let logging = if msettings.human_logs {
+        let logging = if settings.human_logs {
             logging::MozLogger::new_human()
         } else {
             logging::MozLogger::new_json()
         };
-        let metrics = metrics::metrics_from_opts(&msettings, logging).unwrap();
-        let iploc = maxminddb::Reader::open(&db_loc).unwrap_or_else(|x| {
-            use std::process::exit;
-            println!("Could not read geoip database {:?}", x);
-            exit(1);
-        });
-        // Websocket sessions state
-        let state = session::WsChannelSessionState {
-            addr: server.clone(),
-            log: log.clone(),
-            iploc,
-            metrics,
-            trusted_proxy_list: trusted_list.clone(),
-            connection_lifespan,
-            client_timeout,
-            ping_interval,
-        };
+        App::new()
+            .data(server.clone())
+            // redirect to websocket.html
+            .service(web::resource("/").route(web::get().to(|| {
+                HttpResponse::Found()
+                    .header("LOCATION", "/static/websocket.html")
+                    .finish()
+            })))
+            // websocket
+            .service(web::resource("/ws/").to(chat_route))
+            // static resources
+            .service(web::resource("/__heartbeat__").route(web::get().to(heartbeat)))
+            .service(web::resource("/__lbheartbeat__").route(web::get().to(lbheartbeat)))
+            .service(web::resource("/__version__").route(web::get().to(show_version)))
 
-        build_app(App::with_state(state))
+            .service(fs::Files::new("/static/", "static/"))
     })
-    .bind(&addr)
-    .unwrap()
-    .start();
-
-    info!(logger.log, "Started http server: {}\n{:?}", addr, settings);
-    let _ = sys.run();
-}
-
-#[cfg(test)]
-mod test {
-    use std::str;
-
-    use actix_web::test;
-    use actix_web::HttpMessage;
-    use cadence::{NopMetricSink, StatsdClient};
-
-    use super::*;
-    fn get_server() -> test::TestServer {
-        let srv = test::TestServer::build_with_state(|| {
-            let server = Arbiter::start(|_| server::ChannelServer::default());
-            let settings = settings::Settings::new().ok().unwrap();
-            let log = if settings.human_logs {
-                logging::MozLogger::new_human()
-            } else {
-                logging::MozLogger::default()
-            };
-            let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
-            let metrics = StatsdClient::builder("autopush", NopMetricSink).build();
-
-            session::WsChannelSessionState {
-                addr: server.clone(),
-                log,
-                iploc,
-                metrics,
-                trusted_proxy_list: vec![],
-                connection_lifespan: 60,
-                client_timeout: 30,
-                ping_interval: 5,
-            }
-        });
-        srv.start(|app| {
-            // Make this a trait eventually, for now, just copy build_app
-            app.resource("/", |r| {
-                r.method(http::Method::GET)
-                    .f(|_| HttpResponse::NotFound().finish())
-            })
-            // websocket to an existing channel
-            .resource("/v1/ws/{channel}", |r| r.route().f(channel_route))
-            // connecting to an empty channel creates a new one.
-            .resource("/v1/ws/", |r| r.route().f(channel_route))
-            .resource("/__version__", |r| {
-                r.method(http::Method::GET).f(show_version)
-            })
-            .resource("/__heartbeat__", |r| {
-                r.method(http::Method::GET).f(heartbeat)
-            })
-            .resource("/__lbheartbeat__", |r| {
-                r.method(http::Method::GET).f(lbheartbeat)
-            });
-        })
-    }
-
-    #[test]
-    fn test_heartbeats() {
-        let mut srv = get_server();
-        // Test the DockerFlow URLs
-        {
-            let request = srv.get().uri(srv.url("/__heartbeat__")).finish().unwrap();
-            let response = srv.execute(request.send()).unwrap();
-            assert!(response.status().is_success());
-            let bytes = srv.execute(response.body()).unwrap();
-            let body = str::from_utf8(&bytes).unwrap();
-            assert_eq!(
-                json!({"status": "ok", "version": env!("CARGO_PKG_VERSION")}).to_string(),
-                body
-            );
-        }
-        {
-            let request = srv.get().uri(srv.url("/__lbheartbeat__")).finish().unwrap();
-            let response = srv.execute(request.send()).unwrap();
-            assert!(response.status().is_success());
-        }
-        {
-            let request = srv.get().uri(srv.url("/__version__")).finish().unwrap();
-            let response = srv.execute(request.send()).unwrap();
-            assert!(response.status().is_success());
-            let bytes = srv.execute(response.body()).unwrap();
-            let body = str::from_utf8(&bytes).unwrap();
-            assert_eq!(include_str!("../version.json"), body);
-        }
-    }
-
-    // To test websocket interface, please use external test_chan
+    .bind(addr)?
+    .run()
+    .await
 }

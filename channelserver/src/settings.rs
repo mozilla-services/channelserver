@@ -1,6 +1,7 @@
 use std::env;
 
 use config::{Config, ConfigError, Environment, File};
+use serde::Deserialize;
 
 static PREFIX: &str = "PAIR";
 

@@ -4,22 +4,23 @@ use actix::{
     fut, Actor, ActorContext, ActorFuture, Addr, AsyncContext, ContextFutureSpawner, Handler,
     Running, StreamHandler, WrapFuture,
 };
-use actix_web::ws;
+use actix_web_actors::ws;
 use cadence::{Counted, StatsdClient};
 use ipnet::IpNet;
 use maxminddb;
+use slog::{debug, error, info, warn};
 
-use channelid::ChannelID;
-use logging;
-use meta::SenderData;
-use server;
+use crate::channelid::ChannelID;
+use crate::logging;
+use crate::meta::SenderData;
+use crate::server;
 
 /// This is our websocket route state, this state is shared with all route
 /// instances via `HttpContext::state()`
 pub struct WsChannelSessionState {
     pub addr: Addr<server::ChannelServer>,
     pub log: logging::MozLogger,
-    pub iploc: maxminddb::Reader,
+    pub iploc: maxminddb::Reader<Vec<u8>>,
     pub metrics: StatsdClient,
     pub trusted_proxy_list: Vec<IpNet>,
     pub connection_lifespan: u64,
@@ -76,7 +77,6 @@ impl Actor for WsChannelSession {
                             return fut::err(());
                         }
                         debug!(
-                            ctx.state().log.log,
                             "Starting new session";
                             "session" => session_id,
                             "remote_ip" => meta.remote,
@@ -139,21 +139,21 @@ impl Handler<server::TextMessage> for WsChannelSession {
 }
 
 /// WebSocket message handler
-impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChannelSession {
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
         debug!(ctx.state().log.log,
         "Websocket Message: {:?}", msg;
         "remote_ip" => &self.meta.remote
         );
         match msg {
-            ws::Message::Ping(msg) => {
+            Ok(ws::Message::Ping(msg)) => {
                 self.hb = Instant::now();
                 ctx.pong(&msg);
             }
-            ws::Message::Pong(msg) => {
+            Ok(ws::Message::Pong(msg)) => {
                 self.hb = Instant::now();
             }
-            ws::Message::Text(text) => {
+            Ok(ws::Message::Text(text)) => {
                 self.hb = Instant::now();
                 let mut m = text.trim();
                 ctx.state().addr.do_send(server::ClientMessage {
@@ -164,14 +164,14 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
                     sender: self.meta.clone(),
                 })
             }
-            ws::Message::Binary(bin) => {
+            Ok(ws::Message::Binary(bin)) => {
                 info!(
                     ctx.state().log.log,
                     "TODO: Binary format not supported";
                     "remote_ip"=> &self.meta.remote,
                 );
             }
-            ws::Message::Close(_) => {
+            Ok(ws::Message::Close(_)) => {
                 ctx.state().addr.do_send(server::Disconnect {
                     id: self.id,
                     channel: self.channel,
@@ -186,54 +186,5 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for WsChannelSession {
                 ctx.stop();
             }
         }
-    }
-}
-
-impl WsChannelSession {
-    fn hb(&self, ctx: &mut ws::WebsocketContext<Self, WsChannelSessionState>) {
-        let interval = Duration::from_secs(ctx.state().ping_interval);
-        ctx.run_interval(interval, |act, ctx| {
-            // Has the connection's lifespan expired?
-            if Instant::now() > act.expiry {
-                warn!(
-                    ctx.state().log.log,
-                    "Client connected too long";
-                    "session" => &act.id,
-                    "channel" => &act.channel.to_string(),
-                    "remote_ip" => &act.meta.remote,
-                );
-                ctx.state().addr.do_send(server::Disconnect {
-                    id: act.id,
-                    channel: act.channel,
-                    reason: server::DisconnectReason::Timeout,
-                });
-                ctx.state().metrics.incr("conn.expired").unwrap();
-                ctx.stop();
-                return;
-            }
-
-            // Have we not gotten any traffic from the client?
-            if Instant::now().duration_since(act.hb)
-                > Duration::from_secs(ctx.state().client_timeout)
-            {
-                warn!(
-                    ctx.state().log.log,
-                    "Client time-out. Disconnecting";
-                    "session" => &act.id,
-                    "channel" => &act.channel.to_string(),
-                    "remote_ip" => &act.meta.remote,
-                );
-                ctx.state().metrics.incr("conn.timeout").unwrap();
-                ctx.state().addr.do_send(server::Disconnect {
-                    id: act.id,
-                    channel: act.channel,
-                    reason: server::DisconnectReason::ConnectionError,
-                });
-                ctx.stop();
-                return;
-            }
-            // Send the ping.
-            ctx.ping("");
-        });
     }
 }
