@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, SocketAddr};
 
-use actix_web::{http, HttpRequest, FromRequest, Error, dev::Payload};
-use futures::future::{ok, err, Ready};
+use actix_web::{dev::Payload, http, Error, FromRequest, HttpRequest};
+use futures::future::{err, ok, Ready};
 use http::header::HeaderName;
 use ipnet::IpNet;
 use maxminddb::{self, geoip2::City, MaxMindDBError};
@@ -296,68 +296,6 @@ fn get_location(
     }
 }
 
-/*
-// Set the sender meta information from the request headers.
-impl From<HttpRequest> for SenderData {
-    fn from(req: HttpRequest) -> Self {
-        let mut sender = SenderData::default();
-        let headers = req.headers();
-        let data = req.app_data::<WsChannelSessionState>().unwrap();
-        // Ideally, this would just get &req. For testing, I'm passing in the values.
-        sender.remote = match get_remote(
-            &req.peer_addr(),
-            &req.headers(),
-            &data.trusted_proxy_list,
-            &data.log,
-        ) {
-            Ok(addr) => Some(addr),
-            Err(err) => {
-                error!(
-                    data.log.log,
-                    "{:?}", err;
-                    "remote_ip" => &sender.remote
-                );
-                None
-            }
-        };
-        let langs = match headers.get(http::header::ACCEPT_LANGUAGE) {
-            None => vec![String::from("*")],
-            Some(l) => {
-                let lang = match l.to_str() {
-                    Err(err) => {
-                        warn!(
-                            data.log.log,
-                            "Bad Accept-Language string: {:?}", err;
-                            "remote_ip" => &sender.remote
-                        );
-                        "*"
-                    }
-                    Ok(ls) => ls,
-                };
-                preferred_languages(lang.to_owned())
-            }
-        };
-        // parse user-header for platform info
-        sender.ua = get_ua(&headers, &data.log, &sender);
-        get_location(&mut sender, &langs, &data.log, &data.iploc);
-
-        // If there's no sender, try pulling the GCP header.
-        // NOTE: This is US/EN only, so localization should come later.
-        if sender.city.is_none() {
-            if let Some(ghead) = headers.get("X-Client-Geo-Location") {
-                if let Ok(loc_str) = ghead.to_str() {
-                    let mut bits = loc_str.split(',').collect::<Vec<&str>>();
-                    let mut bi = bits.iter();
-                    sender.region = bi.next().map(|s| (*s).to_owned());
-                    sender.city = bi.next().map(|s| (*s).to_owned());
-                }
-            }
-        }
-        sender
-    }
-}
-*/
-
 impl FromRequest for SenderData {
     type Error = Error;
     type Future = Ready<Result<Self, Self::Error>>;
@@ -530,13 +468,17 @@ mod test {
 
     #[test]
     fn test_location_good() {
+
         let test_ip = "63.245.208.195"; // Mozilla
         let log = logging::MozLogger::new_human();
         let langs = vec!["en".to_owned()];
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
-        let iploc = maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb").unwrap();
+        let iploc = maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb")
+            .expect(&format!(
+                "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
+                std::env::current_dir().unwrap().as_path().to_string_lossy()));
         get_location(&mut sender, &langs, &log, &iploc);
         assert_eq!(sender.city, Some("Sacramento".to_owned()));
         assert_eq!(sender.region, Some("California".to_owned()));
@@ -551,7 +493,10 @@ mod test {
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
-        let iploc = maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb").unwrap();
+        let iploc = maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb")
+        .expect(&format!(
+            "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
+            std::env::current_dir().unwrap().as_path().to_string_lossy()));
         get_location(&mut sender, &langs, &log, &iploc);
         assert_eq!(sender.city, None);
         assert_eq!(sender.region, None);

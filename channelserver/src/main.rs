@@ -24,6 +24,16 @@ mod logging;
 mod metrics;
 mod meta;
 
+/*
+    TODO:
+    * remove `.wrap()`s and other shortcuts
+    * fix logging and metric calls
+    * verify integration test (test_chan)
+    * remove detrius code and elements
+    * fmt / fix docs.
+*/
+
+
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 /// How long before lack of client response causes a timeout
@@ -62,7 +72,7 @@ async fn chat_route(
         WsChannelSession {
             id: 0,
             hb: Instant::now(),
-            initial_connect: true,
+            initial_connect: initial_connect,
             expiry: Duration::from_secs(state.connection_lifespan),
             channel,
             addr: srv.get_ref().clone(),
@@ -158,29 +168,25 @@ impl Actor for WsChannelSession {
             })
             .into_actor(self)
             .then(|res, act, ctx| {
+                let remote = &act.meta.remote;
                 match res {
-                    // TODO: Add logging. currently produces static lifetime errors.
                     Ok(session_id) => {
                         if session_id == 0 {
                             ctx.stop()
                         }
-                        /*
                         debug!(
-                            self.log.log,
+                            act.log.log,
                             "Starting new session";
                             "session" => session_id,
-                            "remote_ip" => meta.remote,
+                            "remote_ip" => remote,
                         );
-                        */
                         act.id = res.expect("Error getting session")
                     },
                     Err(err) => {
-                        /*
-                        error!(self.log.log,
+                        error!(act.log.log,
                             "Unhandled Error: {:?}", err;
-                            "remote_ip" => meta.remote,
+                            "remote_ip" => remote,
                             );
-                        */
                         ctx.stop()
                     },
                 }
@@ -191,13 +197,12 @@ impl Actor for WsChannelSession {
 
     fn stopping(&mut self, _ctx: &mut Self::Context) -> Running {
         // notify chat server
-        /*
         debug!(
+            self.log.log,
             "Killing session";
             "session" => &self.id,
             "remote_ip" => &self.meta.remote,
         );
-        */
         self.addr.do_send(server::Disconnect {
              channel: self.channel,
              id: self.id,
@@ -214,13 +219,12 @@ impl Handler<server::Message> for WsChannelSession {
     fn handle(&mut self, msg: server::Message, ctx: &mut Self::Context) {
         match msg.0 {
             server::MessageType::Terminate => {
-                /*
                 debug!(
+                    self.log.log,
                     "Closing session";
                     "session" => &self.id,
                     "remote_ip" => &self.meta.remote,
                 );
-                */
                 ctx.stop();
             },
             server::MessageType::Text => ctx.text(msg.1),
@@ -235,13 +239,11 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChannelSession 
         msg: Result<ws::Message, ws::ProtocolError>,
         ctx: &mut Self::Context,
     ) {
-        /*
         debug!(
-            ctx.log.log,
+            self.log.log,
             "Websocket Message: {:?}", msg;
-            "remote_ip" => &self.meta.remote_ip
+            "remote_ip" => &self.meta.remote
         );
-        */
         let msg = match msg {
             Err(_) => {
                 ctx.stop();
@@ -249,13 +251,11 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChannelSession 
             }
             Ok(msg) => msg,
         };
-        /*
         debug!(
-            ctx.log
+            self.log.log,
             "WEBSOCKET MESSAGE: {:?}", msg;
             "remote_ip" => &self.meta.remote
         );
-        */
         match msg {
             ws::Message::Ping(msg) => {
                 self.hb = Instant::now();
@@ -275,71 +275,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChannelSession 
                     sender: self.meta.clone()
                 })
 
-                /*
-                let m = text.trim();
-                // we check for /sss type of messages
-                if m.starts_with('/') {
-                    let v: Vec<&str> = m.splitn(2, ' ').collect();
-                    match v[0] {
-                        "/list" => {
-                            // Send ListRooms message to chat server and wait for
-                            // response
-                            println!("List rooms");
-                            self.addr
-                                .send(server::ListRooms)
-                                .into_actor(self)
-                                .then(|res, _, ctx| {
-                                    match res {
-                                        Ok(rooms) => {
-                                            for room in rooms {
-                                                ctx.text(room);
-                                            }
-                                        }
-                                        _ => println!("Something is wrong"),
-                                    }
-                                    fut::ready(())
-                                })
-                                .wait(ctx)
-                            // .wait(ctx) pauses all events in context,
-                            // so actor wont receive any new messages until it get list
-                            // of rooms back
-                        }
-                        "/join" => {
-                            if v.len() == 2 {
-                                self.room = v[1].to_owned();
-                                self.addr.do_send(server::Join {
-                                    id: self.id,
-                                    name: self.room.clone(),
-                                });
-
-                                ctx.text("joined");
-                            } else {
-                                ctx.text("!!! room name is required");
-                            }
-                        }
-                        "/name" => {
-                            if v.len() == 2 {
-                                self.name = Some(v[1].to_owned());
-                            } else {
-                                ctx.text("!!! name is required");
-                            }
-                        }
-                        _ => ctx.text(format!("!!! unknown command: {:?}", m)),
-                    }
-                } else {
-                    let msg = if let Some(ref name) = self.name {
-                        format!("{}: {}", name, m)
-                    } else {
-                        m.to_owned()
-                    };
-                    // send message to chat server
-                    self.addr.do_send(server::ClientMessage {
-                        id: self.id,
-                        msg,
-                        room: self.room.clone(),
-                    })
-                }
-                */
             }
             ws::Message::Binary(_) => info!(
                 self.log.log,
@@ -377,15 +312,13 @@ impl WsChannelSession {
             // check client heartbeats
             if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
                 // heartbeat timed out
-                /*
                 info!(
-                    self.log.log,
+                    act.log.log,
                     "Client connected too long";
                     "session" => &act.id,
                     "channel" => &act.channel.to_string(),
                     "remote_ip" => &act.meta.remote,
                 );
-                */
 
                 // notify chat server
                 act.addr.do_send(server::Disconnect {
@@ -393,9 +326,7 @@ impl WsChannelSession {
                     channel: act.channel.clone(),
                     reason: server::DisconnectReason::Timeout
                 });
-                /* TODO: Fix metrics
-                ctx.state().metrics.incr("conn.expired").unwrap();
-                */
+                // act.metrics.incr("conn.expired").unwrap();
 
                 // stop actor
                 ctx.stop();
@@ -404,16 +335,14 @@ impl WsChannelSession {
             if Instant::now().duration_since(act.hb)
                 > act.expiry
                 {
-                    /*
                     info!(
-                        self.log.log,
+                        act.log.log,
                         "Client time-out. Disconnecting";
                         "session" => &act.id,
                         "channel" => &act.channel.to_string(),
                         "remote_ip" => &act.meta.remote,
                     );
-                    */
-                    // self.metrics.incr("conn.timeout").unwrap();
+                    // act.metrics.incr("conn.timeout").unwrap();
                     act.addr.do_send(server::Disconnect{
                         id: act.id,
                         channel: act.channel.clone(),
@@ -462,7 +391,7 @@ async fn main() -> std::io::Result<()> {
                 match fixed.parse::<ipnet::IpNet>() {
                     Ok(addr) => trusted_list.push(addr),
                     Err(err) => {
-                        error!(log.log, r#"Ignoring unparsable IP address "{}"#, proxy);
+                        error!(log.log, r#"Ignoring unparsable IP address "{} {:?}"#, proxy, err);
                     }
                 };
             }

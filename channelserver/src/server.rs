@@ -7,7 +7,7 @@ use std::fmt;
 use actix::prelude::*;
 use maxminddb;
 use rand::{self, rngs::ThreadRng, Rng};
-use serde::{Serialize};
+use serde::Serialize;
 
 use crate::channelid;
 use crate::error;
@@ -114,15 +114,16 @@ pub struct ChannelServer {
 
 impl ChannelServer {
     pub fn new(settings: &Settings, log: &MozLogger) -> Self {
-        let iploc = maxminddb::Reader::open_readfile(&settings.mmdb_loc).expect("Could not read maxmind db");
+        let iploc = maxminddb::Reader::open_readfile(&settings.mmdb_loc)
+            .expect("Could not read maxmind db");
         let metrics = metrics::metrics_from_opts(settings, log).expect("Could not create metrics");
-        Self{
+        Self {
             sessions: HashMap::new(),
             channels: HashMap::new(),
             rng: ThreadRng::default(),
             log: log.clone(),
             iploc,
-            metrics
+            metrics,
         }
     }
 
