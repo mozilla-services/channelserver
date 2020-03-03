@@ -147,14 +147,14 @@ impl Actor for WsChannelSession {
     type Context = ws::WebsocketContext<Self>;
 
     /// Method is called on actor start.
-    /// We register ws session with ChatServer
+    /// We register ws session with server
     fn started(&mut self, ctx: &mut Self::Context) {
         // we'll start heartbeat process on session start.
         self.hb(ctx);
 
         let meta = self.meta.clone();
 
-        // register self in chat server. `AsyncContext::wait` register
+        // register self in server. `AsyncContext::wait` register
         // future within context, but context waits until this future resolves
         // before processing any other events.
         // HttpContext::state() is instance of WsChannelSessionState, state is shared
@@ -212,7 +212,7 @@ impl Actor for WsChannelSession {
     }
 }
 
-/// Handle messages from chat server, we simply send it to peer websocket
+/// Handle messages from server, we simply send it to peer websocket
 impl Handler<server::Message> for WsChannelSession {
     type Result = ();
 
@@ -320,7 +320,7 @@ impl WsChannelSession {
                     "remote_ip" => &act.meta.remote,
                 );
 
-                // notify chat server
+                // notify server
                 act.addr.do_send(server::Disconnect {
                     id: act.id,
                     channel: act.channel.clone(),

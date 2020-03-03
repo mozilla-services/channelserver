@@ -29,9 +29,9 @@ pub enum MessageType {
     Terminate,
 }
 
-/// Message for chat server communications
+/// Message for server communications
 
-/// New chat session is created
+/// New session is created
 #[derive(Message)]
 #[rtype(usize)]
 pub struct Connect {
@@ -70,7 +70,7 @@ impl fmt::Display for DisconnectReason {
     }
 }
 
-/// Send message to specific room
+/// Send message to specific channel
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct ClientMessage {
@@ -83,14 +83,14 @@ pub struct ClientMessage {
     pub sender: meta::SenderData,
 }
 
-/// List of available rooms
+/// List of available channels
 pub struct ListChannels;
 
 impl actix::Message for ListChannels {
     type Result = Vec<channelid::ChannelID>;
 }
 
-/// Join room, if room does not exists create new one.
+/// Join channel, if channel does not exists create new one.
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct Join {
@@ -127,7 +127,7 @@ impl ChannelServer {
         }
     }
 
-    /// Send message to all users in the room
+    /// Send message to all users in the channel
     fn send_message(&self, channelid: &channelid::ChannelID, message: &str, skip_id: usize) {
         if let Some(sessions) = self.channels.get(channelid) {
             for id in sessions {
@@ -141,7 +141,7 @@ impl ChannelServer {
     }
 }
 
-/// Make actor from `ChatServer`
+/// Make actor from `ChannelServer`
 impl Actor for ChannelServer {
     /// We are going to use simple Context, we just need ability to communicate
     /// with other actors.
@@ -155,17 +155,11 @@ impl Handler<Connect> for ChannelServer {
     type Result = usize;
 
     fn handle(&mut self, msg: Connect, ctx: &mut Context<Self>) -> Self::Result {
-        print!("Someone joined");
-
-        // notify all users in same room
-        //self.send_message(&"Main".to_owned(), "Someone joined", 0);
+        info!("Someone joined");
 
         // register session with random id
         let id = self.rng.gen::<usize>();
         self.sessions.insert(id, msg.addr);
-
-        // auto join session to Main room
-        // self.channels.get_mut(&"Main".to_owned()).unwrap().insert(id);
 
         // send id back
         id
@@ -190,12 +184,6 @@ impl Handler<Disconnect> for ChannelServer {
                 }
             }
         }
-        // broadcast to other users
-        /*
-        for channel in channels {
-            self.send_message(&channel, "Someone disconnected", 0);
-        }
-        */
     }
 }
 
@@ -222,33 +210,3 @@ impl Handler<ListChannels> for ChannelServer {
         MessageResult(channels)
     }
 }
-
-/*
-/// Join room, send disconnect message to old room
-/// send join message to new room
-impl Handler<Join> for ChannelServer {
-    type Result = ();
-
-    fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
-        let Join { id, name } = msg;
-        let mut channels = Vec::new();
-
-        // remove session from all rooms
-        for (n, sessions) in &mut self.channels {
-            if sessions.remove(&id) {
-                channels.push(n.to_owned());
-            }
-        }
-        // send message to other users
-        for channel in channels {
-            self.send_message(&channel, "Someone disconnected", 0);
-        }
-
-        if self.channels.get_mut(&name).is_none() {
-            self.channels.insert(name.clone(), HashSet::new());
-        }
-        self.send_message(&name, "Someone connected", id);
-        self.rooms.get_mut(&name).unwrap().insert(id);
-    }
-}
-*/
