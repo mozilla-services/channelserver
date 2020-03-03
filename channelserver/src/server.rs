@@ -155,7 +155,7 @@ impl Handler<Connect> for ChannelServer {
     type Result = usize;
 
     fn handle(&mut self, msg: Connect, ctx: &mut Context<Self>) -> Self::Result {
-        info!("Someone joined");
+        println!("Someone joined");
 
         // register session with random id
         let id = self.rng.gen::<usize>();

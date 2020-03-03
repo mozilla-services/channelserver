@@ -46,7 +46,13 @@ async fn chat_route(
     srv: web::Data<Addr<server::ChannelServer>>,
     meta: meta::SenderData,
 ) -> Result<HttpResponse, Error> {
-    let state = req.app_data::<WsChannelSessionState>().unwrap();
+    let raw_state = req.app_data::<WsChannelSessionState>();
+    let state = match raw_state {
+        Some(state) => state,
+        None => {
+            return Ok(HttpResponse::InternalServerError().body("WsChannelSessionState not found"));
+        }
+    };
     let mut path:Vec<&str> = req.path().split('/').collect();
     let log = logging::MozLogger::default();
     let metrics = state.metrics.clone();
@@ -362,8 +368,13 @@ pub struct Server;
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
-
-    let settings = settings::Settings::new().unwrap();
+    let raw_settings = settings::Settings::new();
+    let settings = match raw_settings {
+        Err(e) => {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "configuration was malformed"))
+        }
+        Ok(settings) => settings
+    };
     let sys = System::new("channelserver");
     let addr = format!("{}:{}", settings.hostname, settings.port);
     let log = if settings.human_logs{
