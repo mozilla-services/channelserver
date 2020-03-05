@@ -10,6 +10,7 @@ import websocket
 import unittest
 import pytest
 
+from websocket._exceptions import WebSocketConnectionClosedException
 
 proc = None
 
@@ -58,7 +59,7 @@ class Config(object):
             "mmdb_loc": "../mmdb/latest/GeoLite2-City.mmdb",
             "host": 'localhost',
             "max_exchanges": "5",
-            "max_data": "0",
+            "max_data": "3096",
         }
 
         # extract options from environment
@@ -95,6 +96,8 @@ def setup_module():
     if not opts.app_path:
         return
     cmd = opts.app_path
+    print("### pwd {}".format(os.getcwd()))
+    print("### envs {}".format(envs))
     proc = subprocess.Popen(cmd, shell=True, env=envs)
     time.sleep(0.25)
 
@@ -148,36 +151,62 @@ class TestService(unittest.TestCase):
     def test_max_data(self):
         # TODO: Reset the running server to accept max data of some value.
         max_bytes = int(self.opts.max_data)
-        if max_bytes == 0:
-            pytest.skip("Skipping data")
         (alice, bob) = self.get_connection()
         message = base64.b85encode(os.urandom(max_bytes)).decode("utf8")
         alice.send(message)
         time.sleep(0.5)
         # Call recv to hand the close packet.
-        bob.recv()
-        assert bob.is_closed(), "Receiver did not close"
-
-    def test_max_exchange(self):
-        max_exchange = int(self.opts.max_exchanges) + 1
-        (alice, bob) = self.get_connection()
-        for i in range(0, max_exchange):
-            message = "This is message #{}".format(i)
-            alice.send(message)
-            reply = bob.recv()
-            if len(reply) == 0:
-                break
-            reply = json.loads(reply)
-            assert message == reply.get(
-                    "message"), "Message #{} failed".format(i)
         try:
-            # Try reading, ignoring an already closed socket.
             bob.recv()
-        except websocket._exceptions.WebSocketConnectionClosedException:
+        except WebSocketConnectionClosedException:
             pass
         assert bob.is_closed(), "Receiver did not close"
 
+    def test_max_period(self):
+        (alice, bob) = self.get_connection()
+        i = 0
+        while True:
+            message = "This is message #{}".format(i)
+            alice.send(message)
+            try:
+                reply = bob.recv()
+            except WebSocketConnectionClosedException:
+                break
+            if len(reply) == 0:
+                break
+            reply = json.loads(reply)
+            assert message == reply.get("message"), "Message #{} failed".format(i)
+            time.sleep(2)
+            i += 1
+            assert i < 15, "Connection open too long?"
+
+        assert bob.is_closed(), "Receiver did not close"
+
+    def test_max_exchange(self):
+        (alice, bob) = self.get_connection()
+        max_exchange = self.opts.max_exchange
+        for i in range(0, max_exchange+1):
+            message = "This is message #{}".format(i)
+            alice.send(message)
+            try:
+                reply = bob.recv()
+            except WebSocketConnectionClosedException:
+                assert i == max_exchange, "Invalid message count {}".format(i)
+                break
+            if len(reply) == 0:
+                break
+            reply = json.loads(reply)
+            assert message == reply.get("message"), "Message #{} failed".format(i)
+        try:
+            # Try reading, ignoring an already closed socket.
+            bob.recv()
+        except WebSocketConnectionClosedException:
+            pass
+
+        assert bob.is_closed(), "Receiver did not close"
+
     def test_bad_connection(self):
+        import pdb; pdb.set_trace()
         alice = Connection(url=self.opts.base() + "/v1/ws/")
         bad_link = alice.link.rsplit('/', 1)[0]
         bob_chan = uuid.uuid4().hex

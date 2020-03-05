@@ -84,7 +84,7 @@ impl WsChannelSessionState {
 pub struct WsChannelSession {
     /// unique session id
     pub id: usize,
-    /// Client must send ping at least once per 10 seconds (CLIENT_TIMEOUT),
+    /// Client must send ping at least once per CLIENT_TIMEOUT seconds,
     /// otherwise we drop connection.
     pub hb: Instant,
     // max channel lifespan
@@ -93,10 +93,11 @@ pub struct WsChannelSession {
     pub channel: channelid::ChannelID,
     /// peer name
     pub meta: meta::SenderData,
-    /// Chat server
+    /// Address wrapper for Channel server
     pub addr: Addr<server::ChannelServer>,
-    // logging pointer
+    /// logging pointer
     pub log: logging::MozLogger,
+    /// metrics reporting pointer
     pub metrics: cadence::StatsdClient,
 }
 
@@ -154,7 +155,7 @@ impl Actor for WsChannelSession {
     }
 
     fn stopping(&mut self, _ctx: &mut Self::Context) -> Running {
-        // notify chat server
+        // notify other channels that things are stopping
         debug!(
             self.log.log,
             "Killing session";

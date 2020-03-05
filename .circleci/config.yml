@@ -31,8 +31,6 @@ jobs:
           name: Do integration and unit tests
           command: |
             pushd channelserver
-            bash fetch_mmdb.bash
-            popd
             cargo test --all --verbose -- --nocapture
   build:
     docker:

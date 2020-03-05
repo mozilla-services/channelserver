@@ -16,9 +16,6 @@ the database will be in `mmdb/latest/GeoLite2-City.mmdb`. Use the
 `mmdb_loc` to specify a different path (*Note:* if running in the debugger,
 you may need to create a symlink under `target/debug`.)
 
-If desired the `fetch_mmdb.bash` script will fetch and install the
-latest copy of the GeoLite2 db.
-
 ## Compile and run:
 
 After installing rust via [rustup](https://rustup.rs/):
@@ -48,7 +45,7 @@ This will attempt to localize the geolocation data based on the preferred `Accep
 
 There are several limitations put in place and controlled by the following options:
 
-`max_exchanges` (env: **PAIR_MAX_EXCHANGES**) - Limit the max number of messages that can be exchanged across a channel. (default: 3)
+`max_exchanges` (env: **PAIR_MAX_EXCHANGES**) - Limit the max number of messages that can be exchanged across a channel. (default: 10)
 
 `conn_lifespan` (env: **PAIR_CONN_LIFESPAN**) - Limit the max lifespan of a give channel to this many seconds. The clock starts when the channel is first created. (default: 300)
 

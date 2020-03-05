@@ -1,6 +1,6 @@
-//! `ChatServer` is an actor. It maintains list of connection client session.
-//! And manages available rooms. Peers send messages to other peers in same
-//! room through `ChatServer`.
+//! `ChannelServer` is an actor. It maintains list of connection client session.
+//! And manages available channels. Peers send messages to other peers in same
+//! channels through `ChannelServer`.
 use std::collections::{hash_map::Entry, HashMap};
 use std::fmt;
 use std::time::Instant;
@@ -28,7 +28,7 @@ pub enum MessageType {
     Terminate,
 }
 
-/// New chat session is created
+/// New session is created
 #[derive(Message)]
 #[rtype(usize)]
 pub struct Connect {
@@ -107,8 +107,8 @@ impl actix::Message for ListChannels {
     type Result = Vec<ChannelID>;
 }
 
-/// `ChatServer` manages chat rooms and responsible for coordinating chat
-/// session. implementation is super primitive
+/// `ChannelServer` manages channels and is responsible for coordinating
+/// sessions.
 pub struct ChannelServer {
     // collections of sessions grouped by channel
     channels: HashMap<ChannelID, Channels>,
@@ -149,7 +149,7 @@ impl ChannelServer {
             for party in participants.values_mut() {
                 let max_data: usize = self.settings.max_data as usize;
                 let msg_len = message.len();
-                let remote_ip = party.remote.clone().unwrap_or_else(|| "Uknown".to_owned());
+                let remote_ip = party.remote.clone().unwrap_or_else(|| "Unknown".to_owned());
                 if max_data > 0 && (party.data_exchanged > max_data || msg_len > max_data) {
                     warn!(
                         self.log.log,

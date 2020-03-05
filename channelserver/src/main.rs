@@ -20,8 +20,8 @@ mod server;
 mod session;
 mod settings;
 
-/*
-    TODO: See #77 #issuecomment-594683100
+/* This code is modeled after the Actix example Websocket Chat Server.
+   Which might explain random uses of "chat" appearing in portions of the code.
 */
 
 /// How often heartbeat pings are sent
@@ -30,7 +30,7 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Entry point for our route
-async fn chat_route(
+async fn channel_route(
     req: HttpRequest,
     stream: web::Payload,
     srv: web::Data<Addr<server::ChannelServer>>,
@@ -46,10 +46,6 @@ async fn chat_route(
     let mut path: Vec<&str> = req.path().split('/').collect();
     let log = logging::MozLogger::default();
     let metrics = state.metrics.clone();
-    //TODO: Need to figure out how to either pass the `initial_connect`
-    // to the WsChanneSession.started() func or duplicate this path
-    // logic there to determine `initial_connection` state.
-    //let mut initial_connect = true;
     let channel = match path.pop() {
         Some(id) => {
             if id.is_empty() {
@@ -153,8 +149,8 @@ async fn main() -> std::io::Result<()> {
             .data(state)
             .service(web::resource("/").to(|| HttpResponse::NotFound().finish()))
             // websocket
-            .service(web::resource("/v1/ws/{channel}").to(chat_route))
-            .service(web::resource("/v1/ws/").route(web::get().to(chat_route)))
+            .service(web::resource("/v1/ws/{channel}").to(channel_route))
+            .service(web::resource("/v1/ws/").route(web::get().to(channel_route)))
             // static resources
             .service(web::resource("/__heartbeat__").route(web::get().to(heartbeat)))
             .service(web::resource("/__lbheartbeat__").route(web::get().to(lbheartbeat)))

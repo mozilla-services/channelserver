@@ -10,10 +10,10 @@ RUN \
     rustup default ${RUST_TOOLCHAIN} && \
     cargo --version && \
     rustc --version && \
-    /bin/bash /app/channelserver/fetch_mmdb.bash && \
     mkdir -m 755 bin && \
     cargo build --release && \
     cp /app/target/release/channelserver /app/bin && \
+    cp -r /app/channelserver/mmdb /app/mmdb && \
     cp /app/channelserver/version.json /app
 
 FROM debian:stretch-slim
@@ -30,7 +30,7 @@ RUN \
 
 COPY --from=builder /app/bin /app/bin
 COPY --from=builder /app/version.json /app
-COPY --from=builder /app/mmdb /app/mmdb
+COPY --from=builder /app/channelserver/mmdb /app/mmdb
 
 WORKDIR /app
 USER app

@@ -44,10 +44,44 @@ class Connection(object):
 
 
 class Config(object):
-    protocol = "ws"
-    host = "localhost"
-    port = "8000"
-    app_path = "../target/debug/channelserver"
+    def __init__(self):
+        """Read configuration options as "TEST_" prefix, to prevent
+        collisions"""
+        # defaults
+        opts = {
+            "port": "8000",
+            "protocol": "ws",
+            "app_path": "../target/debug/channelserver",
+            "mmdb_loc": "../channelserver/mmdb/latest/GeoLite2-City.mmdb",
+            "host": 'localhost',
+            "max_exchanges": "10",
+            "max_data": "3096",
+        }
+
+        # extract options from environment
+        for (env, val) in os.environ.items():
+            if not env.startswith("TEST_"):
+                continue
+            opt = env.replace("TEST_", "").lower()
+            if opt in opts:
+                opts[opt] = val
+
+        # make the options your dict
+        self.__dict__ = opts
+
+    def as_env(self):
+        """Convert options into ENV vars """
+        envs = {}
+        for env in vars(self):
+            if env == "app_path":
+                continue
+            envs["PAIR_{}".format(env.upper())] = self.__dict__[env]
+        return envs
+
+    def base(self):
+        """Return base path to app"""
+        return "{}://{}:{}".format(self.protocol, self.host, self.port)
+
 
     def base(self):
         return "{}://{}:{}".format(self.protocol, self.host, self.port)
@@ -55,7 +89,7 @@ class Config(object):
 
 def setup(opts, **kwargs):
     global proc
-    envs = {}
+    envs = opts.as_env()
     for arg in kwargs:
         envs["PAIR_{}".format(arg.upper())] = kwargs[arg]
     cmd = opts.app_path
