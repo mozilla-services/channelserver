@@ -1,9 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, SocketAddr};
 
-use actix_web::{dev::Payload, http, web, Error, FromRequest, HttpRequest};
+use actix_web::{
+    dev::Payload,
+    http::{self, header::HeaderName},
+    web, Error, FromRequest, HttpRequest,
+};
 use futures::future::{ok, Ready};
-use http::header::HeaderName;
 use ipnet::IpNet;
 use maxminddb::{self, geoip2::City, MaxMindDBError};
 use serde::{self, Serialize};
@@ -409,7 +412,7 @@ mod test {
     use actix_web;
     use std::collections::BTreeMap;
 
-    use http;
+    use actix_web::http;
 
     #[test]
     fn test_preferred_language() {

@@ -46,3 +46,8 @@ openssl = "0.10"
 
 maxminddb = "0.13"
 ipnet = "2.2"
+
+#vuln
+http = "^0.2"
+memoffset = "^0.5.0"
+smallvec = "^1"
