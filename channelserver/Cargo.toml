@@ -1,38 +1,53 @@
 [package]
 name = "channelserver"
-version = "0.9.0"
-authors = ["jr conlin<src+pairsona@jrconlin.com"]
+version = "1.0.0"
+license = "MPL-2.0"
+authors = [
+    "jr conlin<src+pairsona@jrconlin.com",
+    "Phil Jenvey <pjenvey@underboss.org",
+    "Donovan Preston <donovanpreston@gmail.com>"
+    ]
+edition = "2018"
 
 [dependencies]
-base64 = "0.10"
-config = "0.9"
+base64 = "0.11"
+config = "0.10"
 failure = "0.1"
-rand = "0.6"
-bytes = "0.4"
-byteorder = "1.2"
-futures = "0.1"
+rand = "0.7"
+bytes = "0.5"
+byteorder = "1.3"
+futures = "0.3"
 tokio-io = "0.1"
 tokio-core = "0.1"
-env_logger = "0.5"
+env_logger = "0.7"
 
-uuid = { version = "0.7", features = ["serde", "v4"] }
+uuid = { version = "0.8", features = ["serde", "v4"] }
 
-cadence = "0.15.1"
-slog = {version="2.4", features=["release_max_level_debug"]}
-slog-async = "2.3.0"
-slog-json = "2.2.0"
-slog-scope = "4.0.1"
-slog-stdlog = "3.0.2"
-slog-term = "2.4.0"
+cadence = "0.19.1"
+slog = {version="2.5", features=["release_max_level_debug"]}
+slog-async = "2.4.0"
+slog-json = "2.3.0"
+slog-scope = "4.3"
+slog-stdlog = "4.0"
+slog-term = "2.5"
 slog-mozlog-json = "0.1.0"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 
-actix = "0.7"
-actix-web = "0.7"
-reqwest = "0.9"
+actix-rt = "1.0"
+actix = "0.9"
+actix-web = "2.0"
+actix-web-actors = "2.0"
+actix-files = "0.2"
+
+reqwest = "0.10"
 openssl = "0.10"
 
-maxminddb = "0.10.0"
-ipnet = "2.0"
+maxminddb = "0.13"
+ipnet = "2.2"
+
+#vuln
+http = "^0.2"
+memoffset = "^0.5.0"
+smallvec = "^1"

@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::io;
 
-use actix::prelude::{Actor, Context, Handler};
+use actix::prelude::{Actor, Context};
 
-use slog;
+use slog::slog_o;
 use slog::Drain;
 use slog_async;
 use slog_mozlog_json::MozLogJson;
@@ -53,7 +53,7 @@ impl MozLogger {
             .fuse();
         let drain = slog_async::Async::new(json_drain).build().fuse();
         Self {
-            log: slog::Logger::root(drain, o!()).new(o!()),
+            log: slog::Logger::root(drain, slog_o!()).new(slog_o!()),
         }
     }
 
@@ -67,7 +67,7 @@ impl MozLogger {
         let drain = slog_async::Async::new(drain).build().fuse();
 
         Self {
-            log: slog::Logger::root(drain, o!()).new(o!()),
+            log: slog::Logger::root(drain, slog_o!()).new(slog_o!()),
         }
     }
 }
@@ -82,7 +82,7 @@ impl Actor for MozLogger {
     type Context = Context<Self>;
 }
 
-#[derive(Message, Debug)]
+#[derive(Debug)]
 pub struct LogMessage {
     pub level: ErrorLevel,
     pub msg: String,
@@ -103,19 +103,5 @@ impl Display for LogMessage {
             msg = format!("{} :: {:?}", msg, attributes);
         }
         Ok(write!(f, "{}", msg)?)
-    }
-}
-
-impl Handler<LogMessage> for MozLogger {
-    type Result = ();
-
-    fn handle(&mut self, msg: LogMessage, context: &mut Context<Self>) -> Self::Result {
-        match &msg.level {
-            ErrorLevel::Debug => slog_debug!(self.log, "{}", &msg),
-            ErrorLevel::Info => slog_info!(self.log, "{}", &msg),
-            ErrorLevel::Warn => slog_warn!(self.log, "{}", &msg),
-            ErrorLevel::Error => slog_error!(self.log, "{}", &msg),
-            ErrorLevel::Critical => slog_crit!(self.log, "{}", &msg),
-        };
     }
 }

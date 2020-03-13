@@ -1,14 +1,20 @@
 use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, SocketAddr};
 
-use actix_web::{http, HttpRequest};
-use http::header::HeaderName;
+use actix_web::{
+    dev::Payload,
+    http::{self, header::HeaderName},
+    web, Error, FromRequest, HttpRequest,
+};
+use futures::future::{ok, Ready};
 use ipnet::IpNet;
 use maxminddb::{self, geoip2::City, MaxMindDBError};
+use serde::{self, Serialize};
+use slog::{debug, error, info, warn};
 
-use logging;
-use perror::{HandlerError, HandlerErrorKind};
-use session::WsChannelSessionState;
+use crate::error::{HandlerError, HandlerErrorKind};
+use crate::logging;
+use crate::session::WsChannelSessionState;
 
 // Sender meta data, drawn from the HTTP Headers of the connection counterpart.
 #[derive(Serialize, Debug, Default, Clone)]
@@ -146,10 +152,15 @@ fn get_remote(
     // our way back up the proxy chain until we find the first unexpected address.
     // This may be an intermediary proxy, or it may be the original requesting system.
     //
-    if peer.is_none() {
-        return Err(HandlerErrorKind::BadRemoteAddrError("Peer is unspecified".to_owned()).into());
+    let peer_ip = match peer {
+        None => {
+            return Err(
+                HandlerErrorKind::BadRemoteAddrError("Peer is unspecified".to_owned()).into(),
+            );
+        }
+        Some(v) => v,
     }
-    let peer_ip = peer.unwrap().ip();
+    .ip();
     // if the peer is not a known proxy, ignore the X-Forwarded-For headers
     if !is_trusted_proxy(proxy_list, &peer_ip) {
         return Ok(peer_ip.to_string());
@@ -172,6 +183,11 @@ fn get_remote(
                                 }
                             }
                             Err(err) => {
+                                info!(log.log,
+                                    "Bad IP Specified";
+                                    "remote_ip" => host_str.trim(),
+                                    "err" => format!("{:?}", err),
+                                );
                                 return Err(HandlerErrorKind::BadRemoteAddrError(
                                     "Bad IP Specified".to_owned(),
                                 )
@@ -202,7 +218,7 @@ fn get_location(
     sender: &mut SenderData,
     langs: &[String],
     log: &logging::MozLogger,
-    iploc: &maxminddb::Reader,
+    iploc: &maxminddb::Reader<Vec<u8>>,
 ) {
     if sender.remote.is_some() {
         debug!(
@@ -293,23 +309,35 @@ fn get_location(
     }
 }
 
-// Set the sender meta information from the request headers.
-impl From<HttpRequest<WsChannelSessionState>> for SenderData {
-    fn from(req: HttpRequest<WsChannelSessionState>) -> Self {
+impl FromRequest for SenderData {
+    type Error = Error;
+    type Future = Ready<Result<Self, Self::Error>>;
+    type Config = ();
+
+    fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
+        let data = match req.app_data::<web::Data<WsChannelSessionState>>() {
+            Some(data) => data,
+            None => panic!("Data not found"),
+        };
+        ok(SenderData::new(req, data))
+    }
+}
+
+impl SenderData {
+    pub fn new(req: &HttpRequest, data: &WsChannelSessionState) -> Self {
         let mut sender = SenderData::default();
         let headers = req.headers();
-        let log = req.state().log.clone();
         // Ideally, this would just get &req. For testing, I'm passing in the values.
         sender.remote = match get_remote(
             &req.peer_addr(),
             &req.headers(),
-            &req.state().trusted_proxy_list,
-            &log,
+            &data.trusted_proxy_list,
+            &data.log,
         ) {
             Ok(addr) => Some(addr),
             Err(err) => {
                 error!(
-                    log.log,
+                    data.log.log,
                     "{:?}", err;
                     "remote_ip" => &sender.remote
                 );
@@ -322,7 +350,7 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
                 let lang = match l.to_str() {
                     Err(err) => {
                         warn!(
-                            log.log,
+                            data.log.log,
                             "Bad Accept-Language string: {:?}", err;
                             "remote_ip" => &sender.remote
                         );
@@ -334,15 +362,15 @@ impl From<HttpRequest<WsChannelSessionState>> for SenderData {
             }
         };
         // parse user-header for platform info
-        sender.ua = get_ua(&headers, &log, &sender);
-        get_location(&mut sender, &langs, &log, &req.state().iploc);
+        sender.ua = get_ua(&headers, &data.log, &sender);
+        get_location(&mut sender, &langs, &data.log, &data.iploc);
 
         // If there's no sender, try pulling the GCP header.
         // NOTE: This is US/EN only, so localization should come later.
         if sender.city.is_none() {
             if let Some(ghead) = headers.get("X-Client-Geo-Location") {
                 if let Ok(loc_str) = ghead.to_str() {
-                    let mut bits = loc_str.split(',').collect::<Vec<&str>>();
+                    let bits = loc_str.split(',').collect::<Vec<&str>>();
                     let mut bi = bits.iter();
                     sender.region = bi.next().map(|s| (*s).to_owned());
                     sender.city = bi.next().map(|s| (*s).to_owned());
@@ -384,7 +412,7 @@ mod test {
     use actix_web;
     use std::collections::BTreeMap;
 
-    use http;
+    use actix_web::http;
 
     #[test]
     fn test_preferred_language() {
@@ -468,7 +496,11 @@ mod test {
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
-        let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
+        let iploc =
+            maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb").expect(&format!(
+                "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
+                std::env::current_dir().unwrap().as_path().to_string_lossy()
+            ));
         get_location(&mut sender, &langs, &log, &iploc);
         assert_eq!(sender.city, Some("Sacramento".to_owned()));
         assert_eq!(sender.region, Some("California".to_owned()));
@@ -483,7 +515,11 @@ mod test {
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
-        let iploc = maxminddb::Reader::open("mmdb/latest/GeoLite2-City.mmdb").unwrap();
+        let iploc =
+            maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb").expect(&format!(
+                "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
+                std::env::current_dir().unwrap().as_path().to_string_lossy()
+            ));
         get_location(&mut sender, &langs, &log, &iploc);
         assert_eq!(sender.city, None);
         assert_eq!(sender.region, None);

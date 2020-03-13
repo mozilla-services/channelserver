@@ -25,8 +25,8 @@ before_script:
 
 script:
     - if [ "${CARGO_FMT_CHECK:-false}" = "true" ]; then cargo fmt -- --check; fi
-    - cargo build --all --exclude=spake2_demo
-    - cargo test --all --exclude=spake2_demo
+    - cargo build --all
+    - cargo test --all
     - make test
 
 notifications:

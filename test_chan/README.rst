@@ -15,6 +15,9 @@ incatnations:
     $ virtualenv .
     $ bin/python setup.py install
 
+You will need to specify the mmdb database location for the channelserver. By default, channelserver
+will try to look in ``./mmdb/latest/GeoLite2_City.mmdb``.
+
 You can test using ``bin/pytest test_chan``. If you need to configure
 things, you need to set environment variables:
 
