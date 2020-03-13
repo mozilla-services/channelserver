@@ -206,7 +206,6 @@ class TestService(unittest.TestCase):
         assert bob.is_closed(), "Receiver did not close"
 
     def test_bad_connection(self):
-        import pdb; pdb.set_trace()
         alice = Connection(url=self.opts.base() + "/v1/ws/")
         bad_link = alice.link.rsplit('/', 1)[0]
         bob_chan = uuid.uuid4().hex
