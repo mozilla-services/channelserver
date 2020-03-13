@@ -5,7 +5,7 @@ use std::collections::{hash_map::Entry, HashMap};
 use std::fmt;
 use std::time::Instant;
 
-use actix::prelude::*;
+use actix::prelude::{Actor, Context, Handler, Message, MessageResult, Recipient};
 use cadence::{Counted, StatsdClient};
 use rand::{self, rngs::ThreadRng, Rng};
 use serde::Serialize;

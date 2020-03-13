@@ -4,7 +4,10 @@ use cadence::{Counted, StatsdClient};
 use ipnet::IpNet;
 use slog::{debug, error, info};
 
-use actix::*;
+use actix::{
+    fut, Actor, ActorContext, ActorFuture, Addr, AsyncContext, ContextFutureSpawner, Handler,
+    Running, StreamHandler, WrapFuture,
+};
 use actix_web_actors::ws;
 
 use crate::channelid;
@@ -91,6 +94,8 @@ pub struct WsChannelSession {
     pub expiry: Duration,
     /// joined channel
     pub channel: channelid::ChannelID,
+    /// is the first time we're connecting?
+    pub initial_connection: bool,
     /// peer name
     pub meta: meta::SenderData,
     /// Address wrapper for Channel server
@@ -122,7 +127,7 @@ impl Actor for WsChannelSession {
             .send(server::Connect {
                 addr: addr.recipient(),
                 channel: self.channel,
-                initial_connect: true,
+                initial_connect: self.initial_connection,
                 remote: meta.remote,
             })
             .into_actor(self)

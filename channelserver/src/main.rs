@@ -6,7 +6,7 @@ use futures::future::Future;
 use serde_json::Value;
 use slog::{debug, error, warn};
 
-use actix::{Addr, Actor};
+use actix::{Actor, Addr};
 use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
 
@@ -46,14 +46,17 @@ async fn channel_route(
     let mut path: Vec<&str> = req.path().split('/').collect();
     let log = logging::MozLogger::default();
     let metrics = state.metrics.clone();
+    let mut initial_connection: bool = true;
     let channel = match path.pop() {
         Some(id) => {
             if id.is_empty() {
                 channelid::ChannelID::default()
             } else {
-                // initial_connect = false;
                 match channelid::ChannelID::from_str(id) {
-                    Ok(channelid) => channelid,
+                    Ok(channelid) => {
+                        initial_connection = false;
+                        channelid
+                    }
                     Err(err) => {
                         warn!(state.log.log, "Routing error: {:?}", err);
                         channelid::ChannelID::default()
@@ -67,10 +70,10 @@ async fn channel_route(
         session::WsChannelSession {
             id: 0,
             hb: Instant::now(),
-            // initial_connect: initial_connect,
             expiry: Duration::from_secs(state.settings.conn_lifespan),
             channel,
             addr: srv.get_ref().clone(),
+            initial_connection,
             meta,
             log,
             metrics,
