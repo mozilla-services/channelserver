@@ -6,7 +6,7 @@ use futures::future::Future;
 use serde_json::Value;
 use slog::{debug, error, warn};
 
-use actix::*;
+use actix::{Addr, Actor};
 use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
 

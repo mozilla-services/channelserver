@@ -105,19 +105,3 @@ impl Display for LogMessage {
         Ok(write!(f, "{}", msg)?)
     }
 }
-
-/*
-impl Handler<LogMessage> for MozLogger {
-    type Result = ();
-
-    fn handle(&mut self, msg: LogMessage, context: &mut Context<Self>) -> Self::Result {
-        match &msg.level {
-            ErrorLevel::Debug => slog_debug!(self.log, "{}", &msg),
-            ErrorLevel::Info => slog_info!(self.log, "{}", &msg),
-            ErrorLevel::Warn => slog_warn!(self.log, "{}", &msg),
-            ErrorLevel::Error => slog_error!(self.log, "{}", &msg),
-            ErrorLevel::Critical => slog_crit!(self.log, "{}", &msg),
-        };
-    }
-}
-*/
