@@ -1,5 +1,5 @@
 # Docker 17.05 or higher required for multi-stage builds
-FROM rust:1.26.0-stretch as builder
+FROM rust:1.42.0-stretch as builder
 ADD . /app
 WORKDIR /app
 # Make sure that this matches in .travis.yml

@@ -1,3 +1,2 @@
 [workspace]
 members = ["channelserver"]
-edition = "2018"
