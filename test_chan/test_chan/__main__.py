@@ -3,6 +3,7 @@ import os
 import base64
 import subprocess
 import json
+import uuid
 
 import psutil
 import websocket
@@ -29,6 +30,7 @@ class Connection(object):
             raise
         body = json.loads(self.ws.recv())
         self.link = body["link"]
+        self.channelid = self.link.rsplit('/')[-1]
 
     def send(self, message):
         self.ws.send(message)
@@ -158,6 +160,29 @@ def max_data(opts, max_bytes=3096):
     print("===== ok")
 
 
+def max_period(opts):
+    print("#### Max Period")
+    (alice, bob) = get_connection(opts)
+    i = 0
+    while True:
+        message = "This is message #{}".format(i)
+        alice.send(message)
+        try:
+            reply = bob.recv()
+        except WebSocketConnectionClosedException:
+            break
+        if len(reply) == 0:
+            break
+        reply = json.loads(reply)
+        assert message == reply.get("message"), "Message #{} failed".format(i)
+        time.sleep(2)
+        i += 1
+        assert i < 15, "Connection open too long?"
+
+    assert bob.is_closed(), "Receiver did not close"
+    print("===== ok")
+
+
 def max_exchange(opts, max_exchange=10):
     print("#### Max Exchange")
     (alice, bob) = get_connection(opts)
@@ -183,26 +208,20 @@ def max_exchange(opts, max_exchange=10):
     print("===== ok")
 
 
-def max_period(opts):
-    print("#### Max Period")
-    (alice, bob) = get_connection(opts)
-    i = 0
-    while True:
-        message = "This is message #{}".format(i)
-        alice.send(message)
-        try:
-            reply = bob.recv()
-        except WebSocketConnectionClosedException:
-            break
-        if len(reply) == 0:
-            break
-        reply = json.loads(reply)
-        assert message == reply.get("message"), "Message #{} failed".format(i)
-        time.sleep(2)
-        i += 1
-        assert i < 15, "Connection open too long?"
-
-    assert bob.is_closed(), "Receiver did not close"
+def bad_connection(opts):
+    print("#### Bad connection")
+    alice = Connection(url=opts.base() + "/v1/ws/")
+    bad_link = alice.link.rsplit('/', 1)[0]
+    bob_chan = uuid.uuid4().hex
+    assert bob_chan != alice.channelid, "Oops, matching channelids"
+    try:
+        bob = Connection(url="{}{}/{}".format(opts.base(), bad_link,
+                            bob_chan))
+        # Try reading, ignoring an already closed socket.
+        bob.recv()
+        assert bob.is_closed(), "Receiver did not close."
+    except websocket._exceptions.WebSocketConnectionClosedException:
+        pass
     print("===== ok")
 
 
@@ -215,6 +234,7 @@ def main():
         max_data(opts, 3096)
         max_exchange(opts)
         max_period(opts)
+        bad_connection(opts)
         print("\n\n All tests passed")
     except Exception as ex:
         print("ERR:: {}".format(ex))
