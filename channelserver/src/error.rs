@@ -1,7 +1,6 @@
 use std::fmt;
 use std::io;
 
-use cadence;
 use failure::{Backtrace, Context, Fail};
 
 #[derive(Debug)]

@@ -1,6 +1,5 @@
 use std::fmt;
 
-use base64;
 use rand::RngCore;
 use serde::ser::{Serialize, Serializer};
 

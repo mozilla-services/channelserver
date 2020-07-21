@@ -6,9 +6,7 @@ use actix::prelude::{Actor, Context};
 
 use slog::slog_o;
 use slog::Drain;
-use slog_async;
 use slog_mozlog_json::MozLogJson;
-use slog_term;
 
 #[derive(Clone, Debug)]
 pub struct MozLogger {
