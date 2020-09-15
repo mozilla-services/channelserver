@@ -302,7 +302,8 @@ fn get_location(
                 info!(
                     log.log,
                     "No location info for IP";
-                    "remote_ip" => &sender.remote
+                    "remote_ip" => &sender.remote,
+                    "lang" => format!("{:?}", &langs),
                 )
             }
         }

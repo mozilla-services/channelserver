@@ -1,11 +1,11 @@
 use std::env;
 
 use config::{Config, ConfigError, Environment, File};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 static PREFIX: &str = "PAIR";
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub hostname: String,             // server hostname (localhost)
     pub port: u16,                    // server port (8000)
@@ -54,7 +54,7 @@ impl Default for Settings {
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
-        let mut settings = Config::default();
+        let mut settings = Config::try_from(&Settings::default())?;
 
         // Get the run environment
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".to_owned());
@@ -62,6 +62,7 @@ impl Settings {
         settings.merge(File::with_name(&format!("config/{}", env)).required(false))?;
         // Add/overwrite with the environments
         settings.merge(Environment::with_prefix(PREFIX))?;
-        settings.try_into()
+        let ret: Settings = settings.try_into()?;
+        Ok(ret)
     }
 }
