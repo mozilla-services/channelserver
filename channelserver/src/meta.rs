@@ -345,7 +345,7 @@ impl SenderData {
             }
         };
         let langs = match headers.get(http::header::ACCEPT_LANGUAGE) {
-            None => vec![String::from("*")],
+            None => preferred_languages(data.settings.default_lang.clone()),
             Some(l) => {
                 let lang = match l.to_str() {
                     Err(err) => {
@@ -354,7 +354,7 @@ impl SenderData {
                             "Bad Accept-Language string: {:?}", err;
                             "remote_ip" => &sender.remote
                         );
-                        "*"
+                        &data.settings.default_lang
                     }
                     Ok(ls) => ls,
                 };
