@@ -28,27 +28,27 @@ pub struct Settings {
 }
 
 impl Default for Settings {
-    fn default() -> Self{
-        Self{
-        hostname: "0.0.0.0".to_owned(),
-        port: 8000,
-        max_channel_connections: 3,
-        conn_lifespan: 300,
-        client_timeout: 30,
-        max_exchanges: 10,
-        max_data: 0,
-        debug: false,
-        verbose: false,
-        mmdb_loc: "mmdb/latest/GeoLite2-City.mmdb".to_owned(),
-        statsd_host: "localhost:8125".to_owned(),
-        trusted_proxy_list: "".to_owned(),
-        ip_reputation_server: "".to_owned(),
-        iprep_min: 0,
-        ip_violation: "channel_abuse".to_owned(),
-        heartbeat: 5,
-        human_logs: false,
-        default_lang: "en".to_owned(),
-    }
+    fn default() -> Self {
+        Self {
+            hostname: "0.0.0.0".to_owned(),
+            port: 8000,
+            max_channel_connections: 3,
+            conn_lifespan: 300,
+            client_timeout: 30,
+            max_exchanges: 10,
+            max_data: 0,
+            debug: false,
+            verbose: false,
+            mmdb_loc: "mmdb/latest/GeoLite2-City.mmdb".to_owned(),
+            statsd_host: "localhost:8125".to_owned(),
+            trusted_proxy_list: "".to_owned(),
+            ip_reputation_server: "".to_owned(),
+            iprep_min: 0,
+            ip_violation: "channel_abuse".to_owned(),
+            heartbeat: 5,
+            human_logs: false,
+            default_lang: "en".to_owned(),
+        }
     }
 }
 
