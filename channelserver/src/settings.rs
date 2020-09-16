@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 static PREFIX: &str = "PAIR";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct Settings {
     pub hostname: String,             // server hostname (localhost)
     pub port: u16,                    // server port (8000)
@@ -54,15 +55,14 @@ impl Default for Settings {
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
-        let mut settings = Config::try_from(&Settings::default())?;
+        let mut settings = Config::new();
 
         // Get the run environment
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".to_owned());
         // start with any local config file.
-        settings.merge(File::with_name(&format!("config/{}", env)).required(false))?;
-        // Add/overwrite with the environments
-        settings.merge(Environment::with_prefix(PREFIX))?;
-        let ret: Settings = settings.try_into()?;
-        Ok(ret)
+        settings
+            .merge(File::with_name(&format!("config/{}", env)).required(false))?
+            .merge(Environment::with_prefix(PREFIX))?;
+        settings.try_into()
     }
 }

@@ -33,19 +33,21 @@ pub struct SenderData {
 
 // Parse the Accept-Language header to get the list of preferred languages.
 // We default to "en" because of well-established Anglo-biases.
-fn preferred_languages(alheader: String) -> Vec<String> {
-    let default_lang = String::from("en");
+fn preferred_languages(alheader: String, default: &str) -> Vec<String> {
+    let default_lang = String::from(default);
     let mut lang_tree: BTreeMap<String, String> = BTreeMap::new();
     let mut i = 0;
     alheader.split(',').for_each(|l| {
-        if l.contains(';') {
-            let weight: Vec<&str> = l.split(';').collect();
-            let lang = weight[0].to_ascii_lowercase();
-            let pref = weight[1].to_ascii_lowercase();
-            lang_tree.insert(String::from(pref.trim()), String::from(lang.trim()));
-        } else {
-            lang_tree.insert(format!("q=1.{:02}", i), l.to_ascii_lowercase());
-            i += 1;
+        if l != "-" {
+            if l.contains(';') {
+                let weight: Vec<&str> = l.split(';').collect();
+                let lang = weight[0].to_ascii_lowercase();
+                let pref = weight[1].to_ascii_lowercase();
+                lang_tree.insert(String::from(pref.trim()), String::from(lang.trim()));
+            } else {
+                lang_tree.insert(format!("q=1.{:02}", i), l.to_ascii_lowercase());
+                i += 1;
+            }
         }
     });
     let mut langs: Vec<String> = lang_tree
@@ -65,7 +67,7 @@ fn get_preferred_language_element(
 ) -> Option<String> {
     for lang in langs {
         // It's a wildcard, so just return the first possible choice.
-        if lang == "*" {
+        if lang == "*" || lang == "-" {
             return elements.values().next().map(std::borrow::ToOwned::to_owned);
         }
         if elements.contains_key(lang) {
@@ -219,6 +221,7 @@ fn get_location(
     langs: &[String],
     log: &logging::MozLogger,
     iploc: &maxminddb::Reader<Vec<u8>>,
+    default_lang: &str,
 ) {
     if sender.remote.is_some() {
         debug!(
@@ -234,7 +237,7 @@ fn get_location(
                 let end = r.find(':').unwrap_or_else(|| r.len());
                 r.drain(..end).collect()
             })
-            .unwrap_or_else(|| String::from(""));
+            .unwrap_or_else(|| default_lang.to_owned());
         if let Ok(loc) = remote.parse() {
             if let Ok(city) = iploc.lookup::<City>(loc).map_err(|err| {
                 handle_city_err(log, &err);
@@ -328,6 +331,7 @@ impl SenderData {
     pub fn new(req: &HttpRequest, data: &WsChannelSessionState) -> Self {
         let mut sender = SenderData::default();
         let headers = req.headers();
+        let default_lang = &data.settings.default_lang;
         // Ideally, this would just get &req. For testing, I'm passing in the values.
         sender.remote = match get_remote(
             &req.peer_addr(),
@@ -346,7 +350,7 @@ impl SenderData {
             }
         };
         let langs = match headers.get(http::header::ACCEPT_LANGUAGE) {
-            None => preferred_languages(data.settings.default_lang.clone()),
+            None => preferred_languages(default_lang.clone(), default_lang),
             Some(l) => {
                 let lang = match l.to_str() {
                     Err(err) => {
@@ -359,13 +363,18 @@ impl SenderData {
                     }
                     Ok(ls) => ls,
                 };
-                preferred_languages(lang.to_owned())
+                preferred_languages(lang.to_owned(), default_lang)
             }
         };
         // parse user-header for platform info
         sender.ua = get_ua(&headers, &data.log, &sender);
-        get_location(&mut sender, &langs, &data.log, &data.iploc);
-
+        get_location(
+            &mut sender,
+            &langs,
+            &data.log,
+            &data.iploc,
+            &data.settings.default_lang,
+        );
         // If there's no sender, try pulling the GCP header.
         // NOTE: This is US/EN only, so localization should come later.
         if sender.city.is_none() {
@@ -417,7 +426,7 @@ mod test {
 
     #[test]
     fn test_preferred_language() {
-        let langs = preferred_languages("en-US,es;q=0.1,en;q=0.5,*;q=0.2".to_owned());
+        let langs = preferred_languages("en-US,es;q=0.1,en;q=0.5,*;q=0.2".to_owned(), "en");
         assert_eq!(
             vec![
                 "en-us".to_owned(),
@@ -428,6 +437,12 @@ mod test {
             ],
             langs
         );
+    }
+
+    #[test]
+    fn test_bad_preferred_language() {
+        let langs = preferred_languages("-".to_owned(), "en");
+        assert_eq!(vec!["en".to_owned()], langs);
     }
 
     #[test]
@@ -502,7 +517,7 @@ mod test {
                 "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
                 std::env::current_dir().unwrap().as_path().to_string_lossy()
             ));
-        get_location(&mut sender, &langs, &log, &iploc);
+        get_location(&mut sender, &langs, &log, &iploc, "en");
         assert_eq!(sender.city, Some("Sacramento".to_owned()));
         assert_eq!(sender.region, Some("California".to_owned()));
         assert_eq!(sender.country, Some("United States".to_owned()));
@@ -521,7 +536,7 @@ mod test {
                 "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
                 std::env::current_dir().unwrap().as_path().to_string_lossy()
             ));
-        get_location(&mut sender, &langs, &log, &iploc);
+        get_location(&mut sender, &langs, &log, &iploc, "en");
         assert_eq!(sender.city, None);
         assert_eq!(sender.region, None);
         assert_eq!(sender.country, None);
