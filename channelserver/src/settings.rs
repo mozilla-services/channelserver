@@ -1,11 +1,12 @@
 use std::env;
 
 use config::{Config, ConfigError, Environment, File};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 static PREFIX: &str = "PAIR";
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct Settings {
     pub hostname: String,             // server hostname (localhost)
     pub port: u16,                    // server port (8000)
@@ -23,36 +24,45 @@ pub struct Settings {
     pub iprep_min: u8,                // Minimum IP Reputation (0)
     pub ip_violation: String,         // Name of the abuse violation
     pub heartbeat: u64,               // Heartbeat rate in seconds for pings (5)
-    pub human_logs: bool,             // Shoe "Human readable" logs (false)
+    pub human_logs: bool,             // Show "Human readable" logs (false)
+    pub default_lang: String,         // Default language if none presented? (None)
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            hostname: "0.0.0.0".to_owned(),
+            port: 8000,
+            max_channel_connections: 3,
+            conn_lifespan: 300,
+            client_timeout: 30,
+            max_exchanges: 10,
+            max_data: 0,
+            debug: false,
+            verbose: false,
+            mmdb_loc: "mmdb/latest/GeoLite2-City.mmdb".to_owned(),
+            statsd_host: "localhost:8125".to_owned(),
+            trusted_proxy_list: "".to_owned(),
+            ip_reputation_server: "".to_owned(),
+            iprep_min: 0,
+            ip_violation: "channel_abuse".to_owned(),
+            heartbeat: 5,
+            human_logs: false,
+            default_lang: "en".to_owned(),
+        }
+    }
 }
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
-        let mut settings = Config::default();
+        let mut settings = Config::new();
 
-        settings.set_default("debug", false)?;
-        settings.set_default("verbose", false)?;
-        settings.set_default("max_exchanges", 10)?;
-        settings.set_default("conn_lifespan", 300)?;
-        settings.set_default("client_timeout", 30)?;
-        settings.set_default("max_channel_connections", 3)?;
-        settings.set_default("max_data", 0)?;
-        settings.set_default("port", 8000)?;
-        settings.set_default("hostname", "0.0.0.0".to_owned())?;
-        settings.set_default("mmdb_loc", "mmdb/latest/GeoLite2-City.mmdb".to_owned())?;
-        settings.set_default("statsd_host", "localhost:8125".to_owned())?;
-        settings.set_default("trusted_proxy_list", "".to_owned())?;
-        settings.set_default("ip_reputation_server", "".to_owned())?;
-        settings.set_default("iprep_min", 0)?;
-        settings.set_default("ip_violation", "channel_abuse".to_owned())?;
-        settings.set_default("heartbeat", 5)?;
-        settings.set_default("human_logs", false)?;
         // Get the run environment
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".to_owned());
         // start with any local config file.
-        settings.merge(File::with_name(&format!("config/{}", env)).required(false))?;
-        // Add/overwrite with the environments
-        settings.merge(Environment::with_prefix(PREFIX))?;
+        settings
+            .merge(File::with_name(&format!("config/{}", env)).required(false))?
+            .merge(Environment::with_prefix(PREFIX))?;
         settings.try_into()
     }
 }
