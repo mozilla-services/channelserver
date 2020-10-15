@@ -7,14 +7,14 @@
 version: 2.1
 defaults:
     docker_login: &docker_login
-    run:
-        name: Login to Dockerhub
-        command: |
-            if [ "${DOCKER_USER}" == "" ] || [ "${DOCKER_PASS}" == "" ]; then
-                echo "Skipping Login to Dockerhub, no credentials."
-            else
-                echo "${DOCKER_PASS}" | docker login -u="${DOCKER_USER}" --password-stdin
-            fi
+        run:
+            name: Login to Dockerhub
+            command: |
+                if [ "${DOCKER_USER}" == "" ] || [ "${DOCKER_PASS}" == "" ]; then
+                    echo "Skipping Login to Dockerhub, no credentials."
+                else
+                    echo "${DOCKER_PASS}" | docker login -u="${DOCKER_USER}" --password-stdin
+                fi
 
 jobs:
   test:
@@ -57,7 +57,7 @@ jobs:
 
       - checkout
       - setup_remote_docker
-
+      - *docker_login
       - run:
           name: Create a version.json
           command: |
@@ -89,6 +89,7 @@ jobs:
       - image: docker:18.02.0-ce
     steps:
       - setup_remote_docker
+      - *docker_login
       - restore_cache:
           key: v1-{{.Branch}}
       - run:
