@@ -20,6 +20,9 @@ jobs:
   test:
     docker:
       - image: circleci/rust:latest
+        auth:
+            username: $DOCKER_USER
+            password: $DOCKER_PASS
     steps:
       - checkout
       - run:
@@ -47,6 +50,9 @@ jobs:
   build:
     docker:
       - image: docker:18.02.0-ce
+        auth:
+            username: $DOCKER_USER
+            password: $DOCKER_PASS
     working_directory: /dockerflow
     steps:
       # workaround circleci's fallback git's "object not found" error w/ tag
@@ -87,6 +93,9 @@ jobs:
   deploy:
     docker:
       - image: docker:18.02.0-ce
+        auth:
+            username: $DOCKER_USER
+            password: $DOCKER_PASS
     steps:
       - setup_remote_docker
       - *docker_login
