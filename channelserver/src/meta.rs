@@ -63,14 +63,14 @@ fn preferred_languages(alheader: String, default: &str) -> Vec<String> {
 // This rounds up from the dialect if possible.
 fn get_preferred_language_element(
     langs: &[String],
-    elements: BTreeMap<String, String>,
+    elements: BTreeMap<&str, &str>,
 ) -> Option<String> {
     for lang in langs {
         // It's a wildcard, so just return the first possible choice.
-        if lang == "*" || lang == "-" {
-            return elements.values().next().map(std::borrow::ToOwned::to_owned);
+        if *lang == "*" || *lang == "-" {
+            return elements.values().next().map(|v|v.to_string());
         }
-        if elements.contains_key(lang) {
+        if elements.contains_key(lang.as_str()) {
             if let Some(element) = elements.get(lang.as_str()) {
                 return Some(element.to_string());
             }
@@ -285,13 +285,13 @@ fn get_location(
                     .city
                     .and_then(|c: maxminddb::geoip2::model::City| c.names)
                 {
-                    sender.city = get_preferred_language_element(&langs, names);
+                    sender.city = get_preferred_language_element(langs, names);
                 }
                 if let Some(names) = city
                     .country
                     .and_then(|c: maxminddb::geoip2::model::Country| c.names)
                 {
-                    sender.country = get_preferred_language_element(&langs, names);
+                    sender.country = get_preferred_language_element(langs, names);
                 }
                 // because consistency is overrated.
                 if let Some(subdivisions) = city.subdivisions {
@@ -460,10 +460,10 @@ mod test {
         // Include the "*" so we can return any language.
         let any_lang = vec!["fu".to_owned(), "*".to_owned(), "en".to_owned()];
         let mut elements = BTreeMap::new();
-        elements.insert("de".to_owned(), "Kalifornien".to_owned());
-        elements.insert("en".to_owned(), "California".to_owned());
-        elements.insert("fr".to_owned(), "Californie".to_owned());
-        elements.insert("ja".to_owned(), "カリフォルニア州".to_owned());
+        elements.insert("de", "Kalifornien");
+        elements.insert("en", "California");
+        elements.insert("fr", "Californie");
+        elements.insert("ja", "カリフォルニア州");
         assert_eq!(
             Some("California".to_owned()),
             get_preferred_language_element(&langs, elements.clone())
