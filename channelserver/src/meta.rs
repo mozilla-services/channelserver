@@ -127,7 +127,7 @@ fn get_ua(
             Ok(s) => s.to_owned(),
         })
     {
-        if ua == "" {
+        if ua.is_empty() {
             // If it's blank, it's None.
             return None;
         }
@@ -393,20 +393,20 @@ impl SenderData {
 
 /// Convert the Sender Metadata into a optional hash of data. Only include things that are set.
 /// This is used mostly by the logger.
-impl Into<Option<HashMap<String, String>>> for SenderData {
-    fn into(self) -> Option<HashMap<String, String>> {
+impl From<SenderData> for Option<HashMap<String, String>> {
+    fn from(data: SenderData) -> Option<HashMap<String, String>> {
         let mut map: HashMap<String, String> = HashMap::new();
         // Do not include UA string for PII reasons.
-        if let Some(val) = self.remote {
+        if let Some(val) = data.remote {
             map.insert("remote_ip".to_owned(), val);
         }
-        if let Some(val) = self.city {
+        if let Some(val) = data.city {
             map.insert("remote_city".to_owned(), val);
         }
-        if let Some(val) = self.region {
+        if let Some(val) = data.region {
             map.insert("remote_region".to_owned(), val);
         }
-        if let Some(val) = self.country {
+        if let Some(val) = data.country {
             map.insert("remote_country".to_owned(), val);
         }
         if !map.is_empty() {
@@ -424,7 +424,7 @@ mod test {
 
     use actix_web::http;
 
-    const TEST_DB:&str = "../mmdb/test/GeoLite2-City-Test.mmdb";
+    const TEST_DB: &str = "../mmdb/test/GeoLite2-City-Test.mmdb";
 
     #[test]
     fn test_preferred_language() {
@@ -514,13 +514,14 @@ mod test {
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
-        let iploc =
-            maxminddb::Reader::open_readfile(TEST_DB).unwrap_or_else(|e| panic!(
+        let iploc = maxminddb::Reader::open_readfile(TEST_DB).unwrap_or_else(|e| {
+            panic!(
                 "Could not open mmdb file at {}/{}: {:?}",
                 std::env::current_dir().unwrap().as_path().to_string_lossy(),
                 TEST_DB,
                 e,
-            ));
+            )
+        });
         get_location(&mut sender, &langs, &log, &iploc, "en");
         assert_eq!(sender.city, Some("Milton".to_owned()));
         assert_eq!(sender.region, Some("Washington".to_owned()));
@@ -535,12 +536,11 @@ mod test {
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
-        let iploc =
-            maxminddb::Reader::open_readfile(TEST_DB).expect(&format!(
-                "Could not find mmdb file at {}/{}",
-                std::env::current_dir().unwrap().as_path().to_string_lossy(),
-                TEST_DB
-            ));
+        let iploc = maxminddb::Reader::open_readfile(TEST_DB).expect(&format!(
+            "Could not find mmdb file at {}/{}",
+            std::env::current_dir().unwrap().as_path().to_string_lossy(),
+            TEST_DB
+        ));
         get_location(&mut sender, &langs, &log, &iploc, "en");
         assert_eq!(sender.city, None);
         assert_eq!(sender.region, None);
