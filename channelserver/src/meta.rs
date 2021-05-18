@@ -424,6 +424,8 @@ mod test {
 
     use actix_web::http;
 
+    const TEST_DB:&str = "../mmdb/test/GeoLite2-City-Test.mmdb";
+
     #[test]
     fn test_preferred_language() {
         let langs = preferred_languages("en-US,es;q=0.1,en;q=0.5,*;q=0.2".to_owned(), "en");
@@ -506,20 +508,22 @@ mod test {
 
     #[test]
     fn test_location_good() {
-        let test_ip = "63.245.208.195"; // Mozilla
+        let test_ip = "216.160.83.56";
         let log = logging::MozLogger::new_human();
         let langs = vec!["en".to_owned()];
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
         let iploc =
-            maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb").expect(&format!(
-                "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
-                std::env::current_dir().unwrap().as_path().to_string_lossy()
+            maxminddb::Reader::open_readfile(TEST_DB).unwrap_or_else(|e| panic!(
+                "Could not open mmdb file at {}/{}: {:?}",
+                std::env::current_dir().unwrap().as_path().to_string_lossy(),
+                TEST_DB,
+                e,
             ));
         get_location(&mut sender, &langs, &log, &iploc, "en");
-        assert_eq!(sender.city, Some("Sacramento".to_owned()));
-        assert_eq!(sender.region, Some("California".to_owned()));
+        assert_eq!(sender.city, Some("Milton".to_owned()));
+        assert_eq!(sender.region, Some("Washington".to_owned()));
         assert_eq!(sender.country, Some("United States".to_owned()));
     }
 
@@ -532,9 +536,10 @@ mod test {
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
         let iploc =
-            maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb").expect(&format!(
-                "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
-                std::env::current_dir().unwrap().as_path().to_string_lossy()
+            maxminddb::Reader::open_readfile(TEST_DB).expect(&format!(
+                "Could not find mmdb file at {}/{}",
+                std::env::current_dir().unwrap().as_path().to_string_lossy(),
+                TEST_DB
             ));
         get_location(&mut sender, &langs, &log, &iploc, "en");
         assert_eq!(sender.city, None);

@@ -40,7 +40,7 @@ impl Default for Settings {
             max_data: 0,
             debug: false,
             verbose: false,
-            mmdb_loc: "mmdb/latest/GeoLite2-City.mmdb".to_owned(),
+            mmdb_loc: "mmdb/test/GeoLite2-City-Test.mmdb".to_owned(),
             statsd_host: "localhost:8125".to_owned(),
             trusted_proxy_list: "".to_owned(),
             ip_reputation_server: "".to_owned(),
