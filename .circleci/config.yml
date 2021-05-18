@@ -25,7 +25,11 @@ jobs:
           name: Do rust checks
           command: |
             # Actix update out of scope for current deploy
-            cargo audit --ignore RUSTSEC-2020-0049 --ignore RUSTSEC-2020-0048
+            cargo audit \
+              --ignore RUSTSEC-2020-0049 \
+              --ignore RUSTSEC-2020-0048 \
+              --ignore RUSTSEC-2018-0007 \
+              
             cargo fmt -- --check
             cargo clippy --all -- -D warnings
       - run:
