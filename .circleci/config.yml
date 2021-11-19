@@ -4,11 +4,25 @@
 # DOCKER_USER    - login info for docker hub
 # DOCKER_PASS
 #
-version: 2
+version: 2.1
+defaults:
+    docker_login: &docker_login
+        run:
+            name: Login to Dockerhub
+            command: |
+                if [ "${DOCKER_USER}" == "" ] || [ "${DOCKER_PASS}" == "" ]; then
+                    echo "Skipping Login to Dockerhub, no credentials."
+                else
+                    echo "${DOCKER_PASS}" | docker login -u="${DOCKER_USER}" --password-stdin
+                fi
+
 jobs:
   test:
     docker:
       - image: circleci/rust:latest
+        auth:
+            username: $DOCKER_USER
+            password: $DOCKER_PASS
     steps:
       - checkout
       - run:
@@ -23,6 +37,8 @@ jobs:
             rustc --version
       - run:
           name: Do rust checks
+          # ignoring RUSTSEC-2020-0041 -> sentry fix not yet available
+          # ignoring RUSTSEC-2020-0049 -> fix is beta code
           command: |
             # Actix update out of scope for current deploy
             cargo audit \
@@ -39,6 +55,9 @@ jobs:
   build:
     docker:
       - image: docker:18.02.0-ce
+        auth:
+            username: $DOCKER_USER
+            password: $DOCKER_PASS
     working_directory: /dockerflow
     steps:
       # workaround circleci's fallback git's "object not found" error w/ tag
@@ -49,7 +68,7 @@ jobs:
 
       - checkout
       - setup_remote_docker
-
+      - *docker_login
       - run:
           name: Create a version.json
           command: |
@@ -79,8 +98,12 @@ jobs:
   deploy:
     docker:
       - image: docker:18.02.0-ce
+        auth:
+            username: $DOCKER_USER
+            password: $DOCKER_PASS
     steps:
       - setup_remote_docker
+      - *docker_login
       - restore_cache:
           key: v1-{{.Branch}}
       - run:
