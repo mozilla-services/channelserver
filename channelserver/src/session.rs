@@ -48,10 +48,11 @@ impl WsChannelSessionState {
             )
         });
 
-        let mut trusted_list: Vec<IpNet> = Vec::new();
-        trusted_list.push("10.0.0.0/8".parse().unwrap());
-        trusted_list.push("172.16.0.0/12".parse().unwrap());
-        trusted_list.push("192.168.0.0/16".parse().unwrap());
+        let mut trusted_list: Vec<IpNet> = vec![
+            "10.0.0.0/8".parse().unwrap(),
+            "172.16.0.0/12".parse().unwrap(),
+            "192.168.0.0/16".parse().unwrap(),
+        ];
 
         if !settings.trusted_proxy_list.is_empty() {
             for mut proxy in settings.trusted_proxy_list.split(',') {

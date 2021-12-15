@@ -63,14 +63,14 @@ fn preferred_languages(alheader: String, default: &str) -> Vec<String> {
 // This rounds up from the dialect if possible.
 fn get_preferred_language_element(
     langs: &[String],
-    elements: BTreeMap<String, String>,
+    elements: BTreeMap<&str, &str>,
 ) -> Option<String> {
     for lang in langs {
         // It's a wildcard, so just return the first possible choice.
-        if lang == "*" || lang == "-" {
-            return elements.values().next().map(std::borrow::ToOwned::to_owned);
+        if *lang == "*" || *lang == "-" {
+            return elements.values().next().map(|v| v.to_string());
         }
-        if elements.contains_key(lang) {
+        if elements.contains_key(lang.as_str()) {
             if let Some(element) = elements.get(lang.as_str()) {
                 return Some(element.to_string());
             }
@@ -127,7 +127,7 @@ fn get_ua(
             Ok(s) => s.to_owned(),
         })
     {
-        if ua == "" {
+        if ua.is_empty() {
             // If it's blank, it's None.
             return None;
         }
@@ -285,13 +285,13 @@ fn get_location(
                     .city
                     .and_then(|c: maxminddb::geoip2::model::City| c.names)
                 {
-                    sender.city = get_preferred_language_element(&langs, names);
+                    sender.city = get_preferred_language_element(langs, names);
                 }
                 if let Some(names) = city
                     .country
                     .and_then(|c: maxminddb::geoip2::model::Country| c.names)
                 {
-                    sender.country = get_preferred_language_element(&langs, names);
+                    sender.country = get_preferred_language_element(langs, names);
                 }
                 // because consistency is overrated.
                 if let Some(subdivisions) = city.subdivisions {
@@ -393,20 +393,20 @@ impl SenderData {
 
 /// Convert the Sender Metadata into a optional hash of data. Only include things that are set.
 /// This is used mostly by the logger.
-impl Into<Option<HashMap<String, String>>> for SenderData {
-    fn into(self) -> Option<HashMap<String, String>> {
+impl From<SenderData> for Option<HashMap<String, String>> {
+    fn from(data: SenderData) -> Option<HashMap<String, String>> {
         let mut map: HashMap<String, String> = HashMap::new();
         // Do not include UA string for PII reasons.
-        if let Some(val) = self.remote {
+        if let Some(val) = data.remote {
             map.insert("remote_ip".to_owned(), val);
         }
-        if let Some(val) = self.city {
+        if let Some(val) = data.city {
             map.insert("remote_city".to_owned(), val);
         }
-        if let Some(val) = self.region {
+        if let Some(val) = data.region {
             map.insert("remote_region".to_owned(), val);
         }
-        if let Some(val) = self.country {
+        if let Some(val) = data.country {
             map.insert("remote_country".to_owned(), val);
         }
         if !map.is_empty() {
@@ -423,6 +423,8 @@ mod test {
     use std::collections::BTreeMap;
 
     use actix_web::http;
+
+    const TEST_DB: &str = "../mmdb/test/GeoLite2-City-Test.mmdb";
 
     #[test]
     fn test_preferred_language() {
@@ -458,10 +460,10 @@ mod test {
         // Include the "*" so we can return any language.
         let any_lang = vec!["fu".to_owned(), "*".to_owned(), "en".to_owned()];
         let mut elements = BTreeMap::new();
-        elements.insert("de".to_owned(), "Kalifornien".to_owned());
-        elements.insert("en".to_owned(), "California".to_owned());
-        elements.insert("fr".to_owned(), "Californie".to_owned());
-        elements.insert("ja".to_owned(), "カリフォルニア州".to_owned());
+        elements.insert("de", "Kalifornien");
+        elements.insert("en", "California");
+        elements.insert("fr", "Californie");
+        elements.insert("ja", "カリフォルニア州");
         assert_eq!(
             Some("California".to_owned()),
             get_preferred_language_element(&langs, elements.clone())
@@ -506,20 +508,23 @@ mod test {
 
     #[test]
     fn test_location_good() {
-        let test_ip = "63.245.208.195"; // Mozilla
+        let test_ip = "216.160.83.56";
         let log = logging::MozLogger::new_human();
         let langs = vec!["en".to_owned()];
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
-        let iploc =
-            maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb").expect(&format!(
-                "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
-                std::env::current_dir().unwrap().as_path().to_string_lossy()
-            ));
+        let iploc = maxminddb::Reader::open_readfile(TEST_DB).unwrap_or_else(|e| {
+            panic!(
+                "Could not open mmdb file at {}/{}: {:?}",
+                std::env::current_dir().unwrap().as_path().to_string_lossy(),
+                TEST_DB,
+                e,
+            )
+        });
         get_location(&mut sender, &langs, &log, &iploc, "en");
-        assert_eq!(sender.city, Some("Sacramento".to_owned()));
-        assert_eq!(sender.region, Some("California".to_owned()));
+        assert_eq!(sender.city, Some("Milton".to_owned()));
+        assert_eq!(sender.region, Some("Washington".to_owned()));
         assert_eq!(sender.country, Some("United States".to_owned()));
     }
 
@@ -531,11 +536,11 @@ mod test {
         let mut sender = SenderData::default();
         sender.remote = Some(test_ip.to_owned());
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
-        let iploc =
-            maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb").expect(&format!(
-                "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
-                std::env::current_dir().unwrap().as_path().to_string_lossy()
-            ));
+        let iploc = maxminddb::Reader::open_readfile(TEST_DB).expect(&format!(
+            "Could not find mmdb file at {}/{}",
+            std::env::current_dir().unwrap().as_path().to_string_lossy(),
+            TEST_DB
+        ));
         get_location(&mut sender, &langs, &log, &iploc, "en");
         assert_eq!(sender.city, None);
         assert_eq!(sender.region, None);

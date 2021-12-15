@@ -100,6 +100,6 @@ impl Display for LogMessage {
         if let Some(ref attributes) = self.attributes {
             msg = format!("{} :: {:?}", msg, attributes);
         }
-        Ok(write!(f, "{}", msg)?)
+        write!(f, "{}", msg)
     }
 }
