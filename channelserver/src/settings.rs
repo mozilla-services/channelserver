@@ -55,14 +55,13 @@ impl Default for Settings {
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
-        let mut settings = Config::new();
+        let mut config = Config::builder();
 
         // Get the run environment
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".to_owned());
         // start with any local config file.
-        settings
-            .merge(File::with_name(&format!("config/{}", env)).required(false))?
-            .merge(Environment::with_prefix(PREFIX))?;
-        settings.try_into()
+        config = config.add_source(File::with_name(&format!("config/{}", env)).required(false));
+        config = config.add_source(Environment::with_prefix(PREFIX));
+        config.build()?.try_deserialize::<Self>()
     }
 }

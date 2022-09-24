@@ -58,7 +58,7 @@ mod test {
         let raw_id = "j6jLPVPeQR6diyrkQinRAQ";
         // From URLSafe b64
         let chan = ChannelID::from_str(raw_id).unwrap();
-        assert!(chan.as_string() == raw_id.to_owned());
+        assert!(chan.as_string() == *raw_id);
         ChannelID::from_str("invalid").expect_err("rejected");
         let output = format!("{}", chan);
         assert_eq!("j6jLPVPeQR6diyrkQinRAQ".to_owned(), output);

@@ -63,14 +63,14 @@ fn preferred_languages(alheader: String, default: &str) -> Vec<String> {
 // This rounds up from the dialect if possible.
 fn get_preferred_language_element(
     langs: &[String],
-    elements: BTreeMap<String, String>,
+    elements: BTreeMap<&str, &str>,
 ) -> Option<String> {
     for lang in langs {
         // It's a wildcard, so just return the first possible choice.
         if lang == "*" || lang == "-" {
-            return elements.values().next().map(std::borrow::ToOwned::to_owned);
+            return elements.values().next().map(|s| s.to_owned().to_owned());
         }
-        if elements.contains_key(lang) {
+        if elements.contains_key(lang.as_str()) {
             if let Some(element) = elements.get(lang.as_str()) {
                 return Some(element.to_string());
             }
@@ -127,7 +127,7 @@ fn get_ua(
             Ok(s) => s.to_owned(),
         })
     {
-        if ua == "" {
+        if ua.is_empty() {
             // If it's blank, it's None.
             return None;
         }
@@ -234,7 +234,7 @@ fn get_location(
             .remote
             .clone()
             .map(|mut r| {
-                let end = r.find(':').unwrap_or_else(|| r.len());
+                let end = r.find(':').unwrap_or(r.len());
                 r.drain(..end).collect()
             })
             .unwrap_or_else(|| default_lang.to_owned());
@@ -281,23 +281,17 @@ fn get_location(
                         traits: None }
                     }
                 */
-                if let Some(names) = city
-                    .city
-                    .and_then(|c: maxminddb::geoip2::model::City| c.names)
-                {
-                    sender.city = get_preferred_language_element(&langs, names);
+                if let Some(names) = city.city.and_then(|c| c.names) {
+                    sender.city = get_preferred_language_element(langs, names);
                 }
-                if let Some(names) = city
-                    .country
-                    .and_then(|c: maxminddb::geoip2::model::Country| c.names)
-                {
-                    sender.country = get_preferred_language_element(&langs, names);
+                if let Some(names) = city.country.and_then(|c| c.names) {
+                    sender.country = get_preferred_language_element(langs, names);
                 }
                 // because consistency is overrated.
                 if let Some(subdivisions) = city.subdivisions {
                     if let Some(subdivision) = subdivisions.get(0) {
                         if let Some(names) = subdivision.clone().names {
-                            sender.region = get_preferred_language_element(&langs, names);
+                            sender.region = get_preferred_language_element(langs, names);
                         }
                     }
                 }
@@ -335,7 +329,7 @@ impl SenderData {
         // Ideally, this would just get &req. For testing, I'm passing in the values.
         sender.remote = match get_remote(
             &req.peer_addr(),
-            &req.headers(),
+            req.headers(),
             &data.trusted_proxy_list,
             &data.log,
         ) {
@@ -367,7 +361,7 @@ impl SenderData {
             }
         };
         // parse user-header for platform info
-        sender.ua = get_ua(&headers, &data.log, &sender);
+        sender.ua = get_ua(headers, &data.log, &sender);
         get_location(
             &mut sender,
             &langs,
@@ -393,20 +387,20 @@ impl SenderData {
 
 /// Convert the Sender Metadata into a optional hash of data. Only include things that are set.
 /// This is used mostly by the logger.
-impl Into<Option<HashMap<String, String>>> for SenderData {
-    fn into(self) -> Option<HashMap<String, String>> {
+impl From<SenderData> for Option<HashMap<String, String>> {
+    fn from(senderdata: SenderData) -> Option<HashMap<String, String>> {
         let mut map: HashMap<String, String> = HashMap::new();
         // Do not include UA string for PII reasons.
-        if let Some(val) = self.remote {
+        if let Some(val) = senderdata.remote {
             map.insert("remote_ip".to_owned(), val);
         }
-        if let Some(val) = self.city {
+        if let Some(val) = senderdata.city {
             map.insert("remote_city".to_owned(), val);
         }
-        if let Some(val) = self.region {
+        if let Some(val) = senderdata.region {
             map.insert("remote_region".to_owned(), val);
         }
-        if let Some(val) = self.country {
+        if let Some(val) = senderdata.country {
             map.insert("remote_country".to_owned(), val);
         }
         if !map.is_empty() {
@@ -419,7 +413,6 @@ impl Into<Option<HashMap<String, String>>> for SenderData {
 #[cfg(test)]
 mod test {
     use super::*;
-    use actix_web;
     use std::collections::BTreeMap;
 
     use actix_web::http;
@@ -458,10 +451,10 @@ mod test {
         // Include the "*" so we can return any language.
         let any_lang = vec!["fu".to_owned(), "*".to_owned(), "en".to_owned()];
         let mut elements = BTreeMap::new();
-        elements.insert("de".to_owned(), "Kalifornien".to_owned());
-        elements.insert("en".to_owned(), "California".to_owned());
-        elements.insert("fr".to_owned(), "Californie".to_owned());
-        elements.insert("ja".to_owned(), "カリフォルニア州".to_owned());
+        elements.insert("de", "Kalifornien");
+        elements.insert("en", "California");
+        elements.insert("fr", "Californie");
+        elements.insert("ja", "カリフォルニア州");
         assert_eq!(
             Some("California".to_owned()),
             get_preferred_language_element(&langs, elements.clone())
@@ -509,14 +502,18 @@ mod test {
         let test_ip = "63.245.208.195"; // Mozilla
         let log = logging::MozLogger::new_human();
         let langs = vec!["en".to_owned()];
-        let mut sender = SenderData::default();
-        sender.remote = Some(test_ip.to_owned());
+        let mut sender = SenderData {
+            remote: Some(test_ip.to_owned()),
+            ..Default::default()
+        };
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
-        let iploc =
-            maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb").expect(&format!(
-                "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
-                std::env::current_dir().unwrap().as_path().to_string_lossy()
-            ));
+        let iploc = maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb")
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
+                    std::env::current_dir().unwrap().as_path().to_string_lossy()
+                )
+            });
         get_location(&mut sender, &langs, &log, &iploc, "en");
         assert_eq!(sender.city, Some("Sacramento".to_owned()));
         assert_eq!(sender.region, Some("California".to_owned()));
@@ -528,14 +525,18 @@ mod test {
         let test_ip = "192.168.1.1";
         let log = logging::MozLogger::new_human();
         let langs = vec!["en".to_owned()];
-        let mut sender = SenderData::default();
-        sender.remote = Some(test_ip.to_owned());
+        let mut sender = SenderData {
+            remote: Some(test_ip.to_owned()),
+            ..Default::default()
+        };
         // TODO: either mock maxminddb::Reader or pass it in as a wrapped impl
-        let iploc =
-            maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb").expect(&format!(
-                "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
-                std::env::current_dir().unwrap().as_path().to_string_lossy()
-            ));
+        let iploc = maxminddb::Reader::open_readfile("mmdb/latest/GeoLite2-City.mmdb")
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Could not find mmdb file at {:?}/mmdb/latest/GeoLite2-City.mmdb",
+                    std::env::current_dir().unwrap().as_path().to_string_lossy()
+                )
+            });
         get_location(&mut sender, &langs, &log, &iploc, "en");
         assert_eq!(sender.city, None);
         assert_eq!(sender.region, None);

@@ -42,7 +42,7 @@ async fn channel_route(
             return Ok(HttpResponse::InternalServerError().body("Invalid or missing state"));
         }
     };
-    let meta = meta::SenderData::new(&req, &state);
+    let meta = meta::SenderData::new(&req, state);
     let mut path: Vec<&str> = req.path().split('/').collect();
     let log = logging::MozLogger::default();
     let metrics = state.metrics.clone();
