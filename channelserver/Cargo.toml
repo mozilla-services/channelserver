@@ -49,5 +49,4 @@ ipnet = "2.2"
 
 #vuln
 http = "^0.2"
-memoffset = "^0.5.0"
 smallvec = "^1"
