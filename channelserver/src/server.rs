@@ -6,7 +6,7 @@ use std::fmt;
 use std::time::Instant;
 
 use actix::prelude::{Actor, Context, Handler, Message, MessageResult, Recipient};
-use cadence::{Counted, StatsdClient};
+use cadence::{CountedExt, StatsdClient};
 use rand::{self, rngs::ThreadRng, Rng};
 use serde::Serialize;
 use serde_json::json;
@@ -22,7 +22,7 @@ use crate::settings::Settings;
 
 pub const EOL: &str = "\x04";
 
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Serialize, Debug, Eq, PartialEq)]
 pub enum MessageType {
     Text,
     Terminate,
@@ -47,7 +47,7 @@ pub struct Disconnect {
     pub reason: DisconnectReason,
 }
 
-#[derive(Serialize, Debug, PartialEq, PartialOrd)]
+#[derive(Serialize, Debug, Eq, PartialEq, PartialOrd)]
 pub enum DisconnectReason {
     None,
     _ConnectionError,
@@ -221,12 +221,12 @@ impl ChannelServer {
     fn shutdown(&mut self, channel: &ChannelID) {
         if let Some(participants) = self.channels.get(channel) {
             for id in participants.keys() {
-                if let Some(addr) = self.sessions.get(&id) {
+                if let Some(addr) = self.sessions.get(id) {
                     // send a control message to force close
                     addr.do_send(TextMessage(MessageType::Terminate, EOL.to_owned()))
                         .ok();
                 }
-                self.sessions.remove(&id);
+                self.sessions.remove(id);
             }
         }
         debug!(self.log.log, "Removing channel {}", channel);
@@ -376,7 +376,7 @@ impl Handler<Connect> for ChannelServer {
         // drops, it is possible that it can't reconnect, but that's not a bad
         // thing. We should just let the connection expire as invalid so that
         // it's not stolen.
-        if group.len() > 2 && !reconnect_check(&group, &new_session.remote, Some(&self.log)) {
+        if group.len() > 2 && !reconnect_check(group, &new_session.remote, Some(&self.log)) {
             error!(
                 self.log.log,
                 "Unexpected remote connection";
@@ -454,8 +454,16 @@ mod test {
             },
         );
 
-        assert!(reconnect_check(&test_group, &None, None) == false);
-        assert!(reconnect_check(&test_group, &Some("10.0.0.1".to_owned()), None) == false);
-        assert!(reconnect_check(&test_group, &Some("127.0.0.2".to_owned()), None) == true);
+        assert!(!reconnect_check(&test_group, &None, None));
+        assert!(!reconnect_check(
+            &test_group,
+            &Some("10.0.0.1".to_owned()),
+            None
+        ));
+        assert!(reconnect_check(
+            &test_group,
+            &Some("127.0.0.2".to_owned()),
+            None
+        ));
     }
 }

@@ -131,6 +131,17 @@ def simple_connection(opts):
     print("===== ok")
 
 
+def interrupted_connection(opts):
+    print("#### Simple Connection")
+    (alice, bob) = get_connection(opts)
+    message = "Test message"
+    alice.send(message)
+    body = json.loads(bob.recv())
+    assert message == body["message"]
+    assert "sender" in body
+    print("===== ok")
+
+
 def full_exchange(opts):
     print("#### Full Exchange")
     (alice, bob) = get_connection(opts)

@@ -1,6 +1,7 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cadence::{Counted, StatsdClient};
+use cadence::{CountedExt, StatsdClient};
 use ipnet::IpNet;
 use slog::{debug, error, info};
 
@@ -20,7 +21,7 @@ use crate::{CLIENT_TIMEOUT, HEARTBEAT_INTERVAL};
 
 pub struct WsChannelSessionState {
     pub log: logging::MozLogger,
-    pub metrics: StatsdClient,
+    pub metrics: Arc<StatsdClient>,
     pub settings: settings::Settings,
     pub iploc: maxminddb::Reader<Vec<u8>>,
     pub trusted_proxy_list: Vec<IpNet>,
@@ -76,7 +77,7 @@ impl WsChannelSessionState {
         }
         WsChannelSessionState {
             log: log.clone(),
-            metrics: metrics::metrics_from_opts(&settings, &log).unwrap(),
+            metrics: Arc::new(metrics::metrics_from_opts(settings, log).unwrap()),
             settings: settings.clone(),
             trusted_proxy_list: trusted_list,
             iploc,
@@ -103,7 +104,7 @@ pub struct WsChannelSession {
     /// logging pointer
     pub log: logging::MozLogger,
     /// metrics reporting pointer
-    pub metrics: cadence::StatsdClient,
+    pub metrics: Arc<cadence::StatsdClient>,
 }
 
 impl Actor for WsChannelSession {
