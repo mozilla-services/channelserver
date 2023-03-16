@@ -16,8 +16,8 @@ RUN \
     cp -r /app/channelserver/mmdb /app/mmdb && \
     cp /app/channelserver/version.json /app
 
-FROM debian:stretch-slim
-# FROM debian:stretch  # for debugging docker build
+FROM debian:buster-slim
+# FROM debian:buster  # for debugging docker build
 RUN \
     groupadd --gid 10001 app && \
     useradd --uid 10001 --gid 10001 --home /app --create-home app && \
