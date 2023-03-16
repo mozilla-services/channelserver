@@ -68,7 +68,7 @@ fn get_preferred_language_element(
     for lang in langs {
         // It's a wildcard, so just return the first possible choice.
         if lang == "*" || lang == "-" {
-            return elements.values().next().map(|s| s.to_owned().to_owned());
+            return elements.values().next().map(|s| (*s).to_owned());
         }
         if elements.contains_key(lang.as_str()) {
             if let Some(element) = elements.get(lang.as_str()) {
