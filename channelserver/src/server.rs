@@ -181,8 +181,7 @@ impl ChannelServer {
                 }
                 if party.session_id != skip_id {
                     if let Some(addr) = self.sessions.get(&party.session_id) {
-                        addr.do_send(TextMessage(MessageType::Text, message.to_owned()))
-                            .ok();
+                        addr.do_send(TextMessage(MessageType::Text, message.to_owned()));
                     }
                 }
             }
@@ -197,8 +196,7 @@ impl ChannelServer {
                     debug!(self.log.log, "Sending disconnect to {}", pid);
                     if let Some(addr) = self.sessions.get(&id) {
                         // send a control message to force close
-                        addr.do_send(TextMessage(MessageType::Terminate, EOL.to_owned()))
-                            .ok();
+                        addr.do_send(TextMessage(MessageType::Terminate, EOL.to_owned()));
                     }
                 }
             }
@@ -223,8 +221,7 @@ impl ChannelServer {
             for id in participants.keys() {
                 if let Some(addr) = self.sessions.get(id) {
                     // send a control message to force close
-                    addr.do_send(TextMessage(MessageType::Terminate, EOL.to_owned()))
-                        .ok();
+                    addr.do_send(TextMessage(MessageType::Terminate, EOL.to_owned()));
                 }
                 self.sessions.remove(id);
             }
@@ -394,18 +391,8 @@ impl Handler<Connect> for ChannelServer {
         // tell the client what their channel is.
         let jpath = json!({ "link": format!("/v1/ws/{}", chan_id),
                             "channelid": chan_id });
-        if msg
-            .addr
-            .do_send(TextMessage(MessageType::Text, jpath.to_string()))
-            .is_err()
-        {
-            warn!(
-                self.log.log,
-                "Could not send path to channel";
-                "channel" => chan_id,
-                "remote_ip" => remote
-            )
-        };
+        msg.addr
+            .do_send(TextMessage(MessageType::Text, jpath.to_string()));
         session_id
     }
 }

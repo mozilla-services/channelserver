@@ -12,15 +12,14 @@ pub struct ChannelID {
     value: [u8; CHANNELID_LEN],
 }
 
-
-
 impl ChannelID {
     pub fn as_string(self) -> String {
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(self.value)
     }
 
     pub fn from_str(string: &str) -> Result<ChannelID, base64::DecodeError> {
-        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(string.trim_end_matches('='))?;
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(string.trim_end_matches('='))?;
         let mut array = [0; 16];
         array.copy_from_slice(&bytes[..16]);
         Ok(ChannelID { value: array })
