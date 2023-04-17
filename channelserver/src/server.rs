@@ -391,8 +391,18 @@ impl Handler<Connect> for ChannelServer {
         // tell the client what their channel is.
         let jpath = json!({ "link": format!("/v1/ws/{}", chan_id),
                             "channelid": chan_id });
-        msg.addr
-            .do_send(TextMessage(MessageType::Text, jpath.to_string()));
+        if msg
+            .addr
+            .try_send(TextMessage(MessageType::Text, jpath.to_string()))
+            .is_err()
+        {
+            warn!(
+                self.log.log,
+                "Could not send path to channel";
+                "channel" => chan_id,
+                "remote_ip" => remote
+            )
+        };
         session_id
     }
 }
