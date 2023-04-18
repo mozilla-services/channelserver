@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use futures::future::Future;
 use serde_json::Value;
 use slog::{debug, error, warn};
 
@@ -83,7 +82,7 @@ async fn channel_route(
     )
 }
 
-pub fn heartbeat(_req: HttpRequest) -> impl Future<Output = Result<HttpResponse, Error>> {
+pub async fn heartbeat(_req: HttpRequest) -> HttpResponse {
     // if there's more to check, add it here.
     let mut checklist = HashMap::new();
     checklist.insert(
@@ -96,12 +95,12 @@ pub fn heartbeat(_req: HttpRequest) -> impl Future<Output = Result<HttpResponse,
         .json(checklist)
 }
 
-fn lbheartbeat(_req: HttpRequest) -> impl Future<Output = Result<HttpResponse, Error>> {
+pub async fn lbheartbeat(_req: HttpRequest) -> HttpResponse {
     // load balance heartbeat. Doesn't matter what's returned, aside from a 200
-    HttpResponse::Ok()
+    HttpResponse::Ok().finish()
 }
 
-fn show_version(_req: HttpRequest) -> impl Future<Output = Result<HttpResponse, Error>> {
+pub async fn show_version(_req: HttpRequest) -> HttpResponse {
     // Return the contents of the version.json file.
     HttpResponse::Ok()
         .content_type("application/json")
@@ -148,9 +147,9 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         let state = session::WsChannelSessionState::new(&settings, &log);
         App::new()
-            .data(server.clone())
-            .data(state)
-            .service(web::resource("/").to(|| HttpResponse::NotFound().finish()))
+            .app_data(web::Data::new(server.clone()))
+            .app_data(web::Data::new(state))
+            .service(web::resource("/").route(web::get().to(HttpResponse::NotFound)))
             // websocket
             .service(web::resource("/v1/ws/{channel}").to(channel_route))
             .service(web::resource("/v1/ws/").route(web::get().to(channel_route)))

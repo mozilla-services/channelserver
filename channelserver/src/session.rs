@@ -6,7 +6,7 @@ use ipnet::IpNet;
 use slog::{debug, error, info};
 
 use actix::{
-    fut, Actor, ActorContext, ActorFuture, Addr, AsyncContext, ContextFutureSpawner, Handler,
+    fut, Actor, ActorContext, ActorFutureExt, Addr, AsyncContext, ContextFutureSpawner, Handler,
     Running, StreamHandler, WrapFuture,
 };
 use actix_web_actors::ws;

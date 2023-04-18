@@ -3,7 +3,7 @@ use std::net::{IpAddr, SocketAddr};
 
 use actix_web::{
     dev::Payload,
-    http::{self, header::HeaderName},
+    http::{self, header::HeaderMap, header::HeaderName},
     web, Error, FromRequest, HttpRequest,
 };
 use futures::future::{ok, Ready};
@@ -107,11 +107,7 @@ fn handle_city_err(log: &logging::MozLogger, err: &MaxMindDBError) {
     };
 }
 
-fn get_ua(
-    headers: &http::HeaderMap,
-    log: &logging::MozLogger,
-    meta: &SenderData,
-) -> Option<String> {
+fn get_ua(headers: &HeaderMap, log: &logging::MozLogger, meta: &SenderData) -> Option<String> {
     if let Some(ua) = headers
         .get(http::header::USER_AGENT)
         .map(|s| match s.to_str() {
@@ -143,7 +139,7 @@ fn is_trusted_proxy(proxy_list: &[IpNet], host: &IpAddr) -> bool {
 
 fn get_remote(
     peer: &Option<SocketAddr>,
-    headers: &http::HeaderMap,
+    headers: &HeaderMap,
     proxy_list: &[IpNet],
     log: &logging::MozLogger,
 ) -> Result<String, HandlerError> {
@@ -310,7 +306,6 @@ fn get_location(
 impl FromRequest for SenderData {
     type Error = Error;
     type Future = Ready<Result<Self, Self::Error>>;
-    type Config = ();
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
         let data = match req.app_data::<web::Data<WsChannelSessionState>>() {
@@ -476,7 +471,7 @@ mod test {
     fn test_ua() {
         let good_header = "Mozilla/5.0 Foo";
         let blank_header = "";
-        let mut good_headers = http::HeaderMap::new();
+        let mut good_headers = HeaderMap::new();
         let meta = SenderData::default();
         let log = logging::MozLogger::new_human();
         good_headers.insert(
@@ -487,13 +482,13 @@ mod test {
             Some(good_header.to_owned()),
             get_ua(&good_headers, &log, &meta)
         );
-        let mut blank_headers = http::HeaderMap::new();
+        let mut blank_headers = HeaderMap::new();
         blank_headers.insert(
             http::header::USER_AGENT,
             http::header::HeaderValue::from_static(blank_header),
         );
         assert_eq!(None, get_ua(&blank_headers, &log, &meta));
-        let empty_headers = http::HeaderMap::new();
+        let empty_headers = HeaderMap::new();
         assert_eq!(None, get_ua(&empty_headers, &log, &meta));
     }
 

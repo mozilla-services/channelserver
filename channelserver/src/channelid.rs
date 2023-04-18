@@ -1,5 +1,7 @@
 use std::fmt;
 
+use base64::Engine;
+
 use rand::RngCore;
 use serde::ser::{Serialize, Serializer};
 
@@ -12,11 +14,12 @@ pub struct ChannelID {
 
 impl ChannelID {
     pub fn as_string(self) -> String {
-        base64::encode_config(self.value, base64::URL_SAFE_NO_PAD)
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(self.value)
     }
 
     pub fn from_str(string: &str) -> Result<ChannelID, base64::DecodeError> {
-        let bytes = base64::decode_config(string, base64::URL_SAFE_NO_PAD)?;
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(string.trim_end_matches('='))?;
         let mut array = [0; 16];
         array.copy_from_slice(&bytes[..16]);
         Ok(ChannelID { value: array })
@@ -35,7 +38,7 @@ impl Default for ChannelID {
 impl fmt::Display for ChannelID {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // calling to_string() causes a stack overflow.
-        let as_b64 = base64::encode_config(self.value, base64::URL_SAFE_NO_PAD);
+        let as_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(self.value);
         write!(f, "{}", as_b64)
     }
 }
