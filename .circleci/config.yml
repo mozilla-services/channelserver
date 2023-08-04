@@ -73,7 +73,7 @@ jobs:
             "$CIRCLE_TAG" \
             "$CIRCLE_PROJECT_USERNAME" \
             "$CIRCLE_PROJECT_REPONAME" \
-            "$CIRCLE_BUILD_URL" > channelserver/version.json
+            "$CIRCLE_BUILD_URL" > version.json
 
       - run:
           name: Build Docker image
