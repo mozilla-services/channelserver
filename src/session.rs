@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cadence::{CountedExt, StatsdClient};
+use cadence::{CountedExt, StatsdClient, Timed};
 use ipnet::IpNet;
 use slog::{debug, error, info};
 
@@ -14,7 +14,6 @@ use actix_web_actors::ws;
 use crate::channelid;
 use crate::logging;
 use crate::meta;
-use crate::metrics;
 use crate::server;
 use crate::settings;
 use crate::{CLIENT_TIMEOUT, HEARTBEAT_INTERVAL};
@@ -40,7 +39,11 @@ impl std::fmt::Debug for WsChannelSessionState {
 }
 
 impl WsChannelSessionState {
-    pub fn new(settings: &settings::Settings, log: &logging::MozLogger) -> Self {
+    pub fn new(
+        settings: &settings::Settings,
+        log: &logging::MozLogger,
+        metrics: &Arc<StatsdClient>,
+    ) -> Self {
         let iploc = maxminddb::Reader::open_readfile(&settings.mmdb_loc).unwrap_or_else(|_| {
             panic!(
                 "Could not find mmdb file at {:?}/{}",
@@ -77,7 +80,7 @@ impl WsChannelSessionState {
         }
         WsChannelSessionState {
             log: log.clone(),
-            metrics: Arc::new(metrics::metrics_from_opts(settings, log).unwrap()),
+            metrics: metrics.clone(),
             settings: settings.clone(),
             trusted_proxy_list: trusted_list,
             iploc,
@@ -139,6 +142,7 @@ impl Actor for WsChannelSession {
                         if session_id == 0 {
                             ctx.stop()
                         }
+                        let _ = act.metrics.incr("conn.create");
                         debug!(
                             act.log.log,
                             "Starting new session";
@@ -167,6 +171,10 @@ impl Actor for WsChannelSession {
             "Killing session";
             "session" => &self.id,
             "remote_ip" => &self.meta.remote,
+        );
+        let _ = self.metrics.time(
+            "conn.length",
+            Instant::now().duration_since(self.hb).as_millis() as u64,
         );
         self.addr.do_send(server::Disconnect {
             channel: self.channel,

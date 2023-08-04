@@ -3,6 +3,7 @@
 //! channels through `ChannelServer`.
 use std::collections::{hash_map::Entry, HashMap};
 use std::fmt;
+use std::sync::Arc;
 use std::time::Instant;
 
 use actix::prelude::{Actor, Context, Handler, Message, MessageResult, Recipient};
@@ -17,7 +18,6 @@ use crate::error as perror;
 use crate::logging;
 use crate::logging::MozLogger;
 use crate::meta;
-use crate::metrics;
 use crate::settings::Settings;
 
 pub const EOL: &str = "\x04";
@@ -120,12 +120,15 @@ pub struct ChannelServer {
     pub log: MozLogger,
     // configuration options
     pub settings: Settings,
-    pub metrics: StatsdClient,
+    pub metrics: Arc<StatsdClient>,
 }
 
 impl ChannelServer {
-    pub fn new(settings: &Settings, log: &MozLogger) -> Self {
-        let metrics = metrics::metrics_from_opts(settings, log).expect("Could not create metrics");
+    pub fn new(
+        settings: &Settings,
+        log: &MozLogger,
+        metrics: std::sync::Arc<StatsdClient>,
+    ) -> Self {
         // Add the known private networks to the trusted proxy list
 
         Self {
@@ -134,7 +137,7 @@ impl ChannelServer {
             rng: ThreadRng::default(),
             log: log.clone(),
             settings: settings.clone(),
-            metrics,
+            metrics: metrics.clone(),
         }
     }
 

@@ -15,7 +15,6 @@ pub fn metrics_from_opts(
     settings: &Settings,
     log: &logging::MozLogger,
 ) -> Result<StatsdClient, c_error::HandlerError> {
-    let name = env!("CARGO_PKG_NAME");
     let builder = if !settings.statsd_host.is_empty() {
         let socket = UdpSocket::bind("0.0.0.0:0")?;
         socket.set_nonblocking(true)?;
@@ -32,10 +31,10 @@ pub fn metrics_from_opts(
             "Establishing connection to Stat Server";
             "server"=>host.0,
             "port"=>host.1);
-        StatsdClient::builder(name, sink)
+        StatsdClient::builder(&settings.metric_name, sink)
     } else {
         info!(log.log, "No Stat Server");
-        StatsdClient::builder(name, NopMetricSink)
+        StatsdClient::builder(&settings.metric_name, NopMetricSink)
     };
     let mlog = log.log.clone();
     Ok(builder

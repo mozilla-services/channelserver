@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use cadence::CountedExt;
 use serde_json::Value;
-use slog::{debug, error, warn};
+use slog::{error, info, warn};
 
 use actix::{Actor, Addr};
 use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer};
@@ -49,21 +51,40 @@ async fn channel_route(
     let channel = match path.pop() {
         Some(id) => {
             if id.is_empty() {
+                metrics
+                    .incr_with_tags("conn.request")
+                    .with_tag_value("new")
+                    .send();
                 channelid::ChannelID::default()
             } else {
                 match channelid::ChannelID::from_str(id) {
                     Ok(channelid) => {
                         initial_connection = false;
+                        metrics
+                            .incr_with_tags("conn.request")
+                            .with_tag_value("existing")
+                            .send();
                         channelid
                     }
                     Err(err) => {
                         warn!(state.log.log, "Routing error: {:?}", err);
+                        metrics
+                            .incr_with_tags("conn.request")
+                            .with_tag_value("error")
+                            .send();
                         channelid::ChannelID::default()
                     }
                 }
             }
         }
-        None => channelid::ChannelID::default(),
+
+        None => {
+            metrics
+                .incr_with_tags("conn.request")
+                .with_tag_value("none")
+                .send();
+            channelid::ChannelID::default()
+        }
     };
     ws::start(
         session::WsChannelSession {
@@ -123,6 +144,7 @@ async fn main() -> std::io::Result<()> {
             ))
         }
     };
+
     let addr = format!("{}:{}", settings.hostname, settings.port);
     let log = if settings.human_logs {
         logging::MozLogger::new_human()
@@ -130,7 +152,9 @@ async fn main() -> std::io::Result<()> {
         logging::MozLogger::new_json()
     };
 
-    let server = server::ChannelServer::new(&settings, &log).start();
+    let metrics =
+        Arc::new(metrics::metrics_from_opts(&settings, &log).expect("Could not create metrics"));
+    let server = server::ChannelServer::new(&settings, &log, metrics.clone()).start();
 
     if !Path::new(&settings.mmdb_loc).exists() {
         error!(
@@ -143,9 +167,9 @@ async fn main() -> std::io::Result<()> {
         ));
     };
     // Create Http server with websocket support
-    debug!(&log.log, "Starting server: {:?}", &addr);
+    info!(&log.log, "Starting server: {:?}", &addr);
     HttpServer::new(move || {
-        let state = session::WsChannelSessionState::new(&settings, &log);
+        let state = session::WsChannelSessionState::new(&settings, &log, &metrics);
         App::new()
             .app_data(web::Data::new(server.clone()))
             .app_data(web::Data::new(state))
