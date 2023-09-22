@@ -353,7 +353,7 @@ impl Handler<Connect> for ChannelServer {
             }
             Some(v) => v,
         };
-        if group.len() >= self.settings.max_channel_connections.into() {
+        if group.len() >= self.settings.max_channel_connections as usize {
             warn!(
                 self.log.log,
                 "Too many connections requested for channel";
