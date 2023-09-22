@@ -45,7 +45,6 @@ jobs:
       - run:
           name: Do integration and unit tests
           command: |
-            pushd channelserver
             cargo test --all --verbose -- --nocapture
   build:
     docker:
