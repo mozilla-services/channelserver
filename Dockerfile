@@ -1,5 +1,5 @@
 # Docker 17.05 or higher required for multi-stage builds
-FROM rust:1.68-buster as builder
+FROM rust:1.72-bullseye as builder
 ADD . /app
 WORKDIR /app
 # Make sure that this matches in .travis.yml
