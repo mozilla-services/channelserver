@@ -12,9 +12,7 @@ RUN \
     rustc --version && \
     mkdir -m 755 bin && \
     cargo build --release && \
-    cp /app/target/release/channelserver /app/bin && \
-    cp -r /app/mmdb /app/mmdb && \
-    cp /app/version.json /app
+    cp /app/target/release/channelserver /app/bin
 
 FROM debian:buster-slim
 # FROM debian:buster  # for debugging docker build
