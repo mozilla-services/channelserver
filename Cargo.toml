@@ -5,8 +5,8 @@ license = "MPL-2.0"
 authors = [
     "jr conlin<src+pairsona@jrconlin.com",
     "Phil Jenvey <pjenvey@underboss.org",
-    "Donovan Preston <donovanpreston@gmail.com>"
-    ]
+    "Donovan Preston <donovanpreston@gmail.com>",
+]
 edition = "2021"
 
 [dependencies]
@@ -23,8 +23,8 @@ env_logger = "0.10"
 
 uuid = { version = "1.1", features = ["serde", "v4"] }
 
-cadence = "0.29"
-slog = {version="2.5", features=["release_max_level_debug"]}
+cadence = "1.0"
+slog = { version = "2.5", features = ["release_max_level_debug"] }
 slog-async = "2.5.0"
 slog-json = "2.3.0"
 slog-scope = "4.3"
@@ -48,5 +48,4 @@ maxminddb = "0.23"
 ipnet = "2.2"
 
 #vuln
-http = "^0.2"
 smallvec = "^1"

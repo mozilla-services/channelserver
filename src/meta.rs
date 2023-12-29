@@ -285,7 +285,7 @@ fn get_location(
                 }
                 // because consistency is overrated.
                 if let Some(subdivisions) = city.subdivisions {
-                    if let Some(subdivision) = subdivisions.get(0) {
+                    if let Some(subdivision) = subdivisions.first() {
                         if let Some(names) = subdivision.clone().names {
                             sender.region = get_preferred_language_element(langs, names);
                         }
