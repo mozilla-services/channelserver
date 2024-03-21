@@ -26,6 +26,7 @@ pub struct Settings {
     pub heartbeat: u64,               // Heartbeat rate in seconds for pings (5)
     pub human_logs: bool,             // Show "Human readable" logs (false)
     pub default_lang: String,         // Default language if none presented? (None)
+    pub metric_name: String,          // Optional replacement metric name
 }
 
 impl Default for Settings {
@@ -49,6 +50,7 @@ impl Default for Settings {
             heartbeat: 5,
             human_logs: false,
             default_lang: "en".to_owned(),
+            metric_name: env!("CARGO_PKG_NAME").to_owned(),
         }
     }
 }

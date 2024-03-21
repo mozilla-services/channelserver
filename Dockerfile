@@ -1,5 +1,5 @@
 # Docker 17.05 or higher required for multi-stage builds
-FROM rust:1.68-buster as builder
+FROM rust:1.75-bullseye as builder
 ADD . /app
 WORKDIR /app
 # Make sure that this matches in .travis.yml
@@ -12,9 +12,7 @@ RUN \
     rustc --version && \
     mkdir -m 755 bin && \
     cargo build --release && \
-    cp /app/target/release/channelserver /app/bin && \
-    cp -r /app/channelserver/mmdb /app/mmdb && \
-    cp /app/channelserver/version.json /app
+    cp /app/target/release/channelserver /app/bin
 
 FROM debian:buster-slim
 # FROM debian:buster  # for debugging docker build
@@ -29,7 +27,7 @@ RUN \
 
 COPY --from=builder /app/bin /app/bin
 COPY --from=builder /app/version.json /app
-COPY --from=builder /app/channelserver/mmdb /app/mmdb
+COPY --from=builder /app/mmdb /app/mmdb
 
 WORKDIR /app
 USER app
