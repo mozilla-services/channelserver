@@ -10,16 +10,16 @@ authors = [
 edition = "2021"
 
 [dependencies]
-base64 = "0.21"
-config = "0.13"
+base64 = "0.22"
+backtrace = "0.3"
+config = "0.14"
 failure = "0.1"
 rand = "0.8"
 bytes = "1.1"
 byteorder = "1.3"
 futures = "0.3"
-tokio-io = "0.1"
-tokio-core = "0.1"
-env_logger = "0.10"
+env_logger = "0.11"
+thiserror = "1.0"
 
 uuid = { version = "1.1", features = ["serde", "v4"] }
 
@@ -41,10 +41,10 @@ actix-web = "4.3"
 actix-web-actors = "4.2"
 actix-files = "0.6"
 
-reqwest = "0.11"
+reqwest = "0.12"
 openssl = "0.10"
 
-maxminddb = "0.23"
+maxminddb = "0.24"
 ipnet = "2.2"
 
 #vuln
