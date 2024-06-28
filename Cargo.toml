@@ -1,6 +1,6 @@
 [package]
 name = "channelserver"
-version = "1.2.0"
+version = "1.2.1"
 license = "MPL-2.0"
 authors = [
     "jr conlin<src+pairsona@jrconlin.com",
