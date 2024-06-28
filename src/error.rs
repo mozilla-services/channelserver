@@ -5,6 +5,7 @@ use backtrace::Backtrace;
 use thiserror::Error;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct HandlerError {
     pub kind: HandlerErrorKind,
     pub backtrace: Box<Backtrace>,
