@@ -235,9 +235,8 @@ fn get_location(
             })
             .unwrap_or_else(|| default_lang.to_owned());
         if let Ok(loc) = remote.parse() {
-            if let Ok(city) = iploc.lookup::<City>(loc).map_err(|err| {
-                handle_city_err(log, &err);
-                err
+            if let Ok(city) = iploc.lookup::<City>(loc).inspect_err(|err| {
+                handle_city_err(log, err);
             }) {
                 /*
                     The structure of the returned maxminddb record is:
