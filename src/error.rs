@@ -5,8 +5,11 @@ use backtrace::Backtrace;
 use thiserror::Error;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct HandlerError {
     pub kind: HandlerErrorKind,
+    // Backtrace is defined, but never printed.
+    // If we ever use Sentry here, we should include it.
     pub backtrace: Box<Backtrace>,
 }
 
