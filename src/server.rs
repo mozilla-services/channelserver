@@ -1,14 +1,14 @@
 //! `ChannelServer` is an actor. It maintains list of connection client session.
 //! And manages available channels. Peers send messages to other peers in same
 //! channels through `ChannelServer`.
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{HashMap, hash_map::Entry};
 use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
 
 use actix::prelude::{Actor, Context, Handler, Message, MessageResult, Recipient};
 use cadence::{CountedExt, StatsdClient};
-use rand::{self, rngs::ThreadRng, Rng};
+use rand::{self, Rng, rngs::ThreadRng};
 use serde::Serialize;
 use serde_json::json;
 use slog::{debug, error, trace, warn};
@@ -240,12 +240,12 @@ fn reconnect_check(
     new_remote: &Option<String>,
     log: Option<&logging::MozLogger>,
 ) -> bool {
-    if let Some(ref req_ip) = new_remote {
+    if let Some(req_ip) = new_remote {
         for participant in group.values() {
             if let Some(log) = log {
                 debug!(log.log, "Checking {:?}", &participant.remote);
             }
-            if let Some(ref loc_ip) = &participant.remote {
+            if let Some(loc_ip) = &participant.remote {
                 if req_ip == loc_ip {
                     return true;
                 }
@@ -310,8 +310,8 @@ impl Handler<Connect> for ChannelServer {
     type Result = usize;
 
     fn handle(&mut self, msg: Connect, _ctx: &mut Context<Self>) -> Self::Result {
-        let session_id = self.rng.gen::<usize>();
-        let remote = &msg.remote.clone().unwrap_or_else(|| "Unkown".to_owned());
+        let session_id = self.rng.random::<u64>() as usize;
+        let remote = &msg.remote.clone().unwrap_or_else(|| "Unknown".to_owned());
         let chan_id = &msg.channel.as_string();
         let new_session = Channel {
             session_id,
