@@ -28,7 +28,7 @@ impl ChannelID {
 
 impl Default for ChannelID {
     fn default() -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut bytes = [0; CHANNELID_LEN];
         rng.fill_bytes(&mut bytes);
         Self { value: bytes }
