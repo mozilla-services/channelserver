@@ -36,7 +36,7 @@ impl Default for Settings {
             port: 8000,
             max_channel_connections: 3,
             conn_lifespan: 300,
-            client_timeout: 30,
+            client_timeout: 60, // FXA-12122
             max_exchanges: 10,
             max_data: 0,
             debug: false,
