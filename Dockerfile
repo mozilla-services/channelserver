@@ -1,6 +1,6 @@
 # Docker 17.05 or higher required for multi-stage builds
 # RUST_VER
-FROM rust:1.85-bullseye as builder
+FROM rust:1.86-bookworm AS builder
 ADD . /app
 WORKDIR /app
 # Make sure that this matches in .travis.yml
@@ -15,7 +15,7 @@ RUN \
     cargo build --release && \
     cp /app/target/release/channelserver /app/bin
 
-FROM debian:buster-slim
+FROM debian:bookworm-slim
 # FROM debian:buster  # for debugging docker build
 RUN \
     groupadd --gid 10001 app && \
