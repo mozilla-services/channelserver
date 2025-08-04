@@ -2,13 +2,14 @@ use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, SocketAddr};
 
 use actix_web::{
+    Error, FromRequest, HttpRequest,
     dev::Payload,
     http::{self, header::HeaderMap, header::HeaderName},
-    web, Error, FromRequest, HttpRequest,
+    web,
 };
-use futures::future::{ok, Ready};
+use futures::future::{Ready, ok};
 use ipnet::IpNet;
-use maxminddb::{self, geoip2::City, MaxMindDbError};
+use maxminddb::{self, MaxMindDbError, geoip2::City};
 use serde::{self, Serialize};
 use slog::{debug, error, info, warn};
 
@@ -45,7 +46,7 @@ fn preferred_languages(alheader: String, default: &str) -> Vec<String> {
                 let pref = weight[1].to_ascii_lowercase();
                 lang_tree.insert(String::from(pref.trim()), String::from(lang.trim()));
             } else {
-                lang_tree.insert(format!("q=1.{:02}", i), l.to_ascii_lowercase());
+                lang_tree.insert(format!("q=1.{i:02}"), l.to_ascii_lowercase());
                 i += 1;
             }
         }
@@ -196,8 +197,7 @@ fn get_remote(
                     )
                 }
                 Err(err) => Err(HandlerErrorKind::BadRemoteAddrError(format!(
-                    "Unknown address in X-Forwarded-For: {:?}",
-                    err
+                    "Unknown address in X-Forwarded-For: {err:?}"
                 ))
                 .into()),
             }
