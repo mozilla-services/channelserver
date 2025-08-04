@@ -8,7 +8,7 @@ use serde_json::Value;
 use slog::{error, info, warn};
 
 use actix::{Actor, Addr};
-use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, web};
 use actix_web_actors::ws;
 
 #[macro_use]
@@ -140,8 +140,8 @@ async fn main() -> std::io::Result<()> {
         Err(e) => {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!("Bad or missing configuration {:?}", e),
-            ))
+                format!("Bad or missing configuration {e:?}"),
+            ));
         }
     };
 

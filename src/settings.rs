@@ -62,7 +62,7 @@ impl Settings {
         // Get the run environment
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".to_owned());
         // start with any local config file.
-        config = config.add_source(File::with_name(&format!("config/{}", env)).required(false));
+        config = config.add_source(File::with_name(&format!("config/{env}")).required(false));
         config = config.add_source(Environment::with_prefix(PREFIX));
         config.build()?.try_deserialize::<Self>()
     }

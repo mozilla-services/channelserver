@@ -6,8 +6,8 @@ use ipnet::IpNet;
 use slog::{debug, error, info};
 
 use actix::{
-    fut, Actor, ActorContext, ActorFutureExt, Addr, AsyncContext, ContextFutureSpawner, Handler,
-    Running, StreamHandler, WrapFuture,
+    Actor, ActorContext, ActorFutureExt, Addr, AsyncContext, ContextFutureSpawner, Handler,
+    Running, StreamHandler, WrapFuture, fut,
 };
 use actix_web_actors::ws;
 
@@ -28,12 +28,10 @@ pub struct WsChannelSessionState {
 
 impl std::fmt::Debug for WsChannelSessionState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f,
+        write!(
+            f,
             "WsChannelSessionState{{ log: {:?}, metrics: {:?}, settings: {:?}, iploc: ..., trusted_proxy_list: {:?}}}",
-            self.log,
-            self.metrics,
-            self.settings,
-            self.trusted_proxy_list,
+            self.log, self.metrics, self.settings, self.trusted_proxy_list,
         )
     }
 }
@@ -63,15 +61,15 @@ impl WsChannelSessionState {
                 if !proxy.is_empty() {
                     let mut fixed = proxy.to_owned();
                     if !proxy.contains('/') {
-                        fixed = format!("{}/32", proxy);
-                        debug!(log.log, "Fixing single address {}", fixed);
+                        fixed = format!("{proxy}/32");
+                        debug!(log.log, "Fixing single address {fixed}");
                     }
                     match fixed.parse::<ipnet::IpNet>() {
                         Ok(addr) => trusted_list.push(addr),
                         Err(err) => {
                             error!(
                                 log.log,
-                                r#"Ignoring unparsable IP address "{} {:?}"#, proxy, err
+                                r#"Ignoring unparsable IP address "{proxy} {err:?}"#
                             );
                         }
                     };

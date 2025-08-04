@@ -4,8 +4,8 @@ use std::io;
 
 use actix::prelude::{Actor, Context};
 
-use slog::slog_o;
 use slog::Drain;
+use slog::slog_o;
 use slog_mozlog_json::MozLogJson;
 
 #[derive(Clone, Debug)]
@@ -96,10 +96,10 @@ impl Display for LogMessage {
             ErrorLevel::Error => "ERROR",
             ErrorLevel::Critical => "CRITICAL",
         };
-        let mut msg = format!("{}: {}", level, self.msg);
+        let mut msg = format!("{level}: {}", self.msg);
         if let Some(ref attributes) = self.attributes {
-            msg = format!("{} :: {:?}", msg, attributes);
+            msg = format!("{msg} :: {attributes:?}");
         }
-        Ok(write!(f, "{}", msg)?)
+        Ok(write!(f, "{msg}")?)
     }
 }
