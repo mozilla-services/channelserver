@@ -2,13 +2,14 @@ use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, SocketAddr};
 
 use actix_web::{
+    Error, FromRequest, HttpRequest,
     dev::Payload,
     http::{self, header::HeaderMap, header::HeaderName},
-    web, Error, FromRequest, HttpRequest,
+    web,
 };
-use futures::future::{ok, Ready};
+use futures::future::{Ready, ok};
 use ipnet::IpNet;
-use maxminddb::{self, geoip2::City, MaxMindDBError};
+use maxminddb::{self, MaxMindDbError, geoip2::City};
 use serde::{self, Serialize};
 use slog::{debug, error, info, warn};
 
@@ -45,7 +46,7 @@ fn preferred_languages(alheader: String, default: &str) -> Vec<String> {
                 let pref = weight[1].to_ascii_lowercase();
                 lang_tree.insert(String::from(pref.trim()), String::from(lang.trim()));
             } else {
-                lang_tree.insert(format!("q=1.{:02}", i), l.to_ascii_lowercase());
+                lang_tree.insert(format!("q=1.{i:02}"), l.to_ascii_lowercase());
                 i += 1;
             }
         }
@@ -88,19 +89,16 @@ fn get_preferred_language_element(
 }
 
 #[allow(unreachable_patterns)]
-fn handle_city_err(log: &logging::MozLogger, err: &MaxMindDBError) {
+fn handle_city_err(log: &logging::MozLogger, err: &MaxMindDbError) {
     match err {
-        maxminddb::MaxMindDBError::InvalidDatabaseError(s) => {
+        maxminddb::MaxMindDbError::InvalidDatabase(s) => {
             error!(log.log, "Invalid GeoIP database! {:?}", s);
             ::std::process::exit(-1);
         }
-        maxminddb::MaxMindDBError::IoError(s) => error!(log.log, "Could not read database {:?}", s),
-        maxminddb::MaxMindDBError::MapError(s) => warn!(log.log, "Mapping error: {:?}", s),
-        maxminddb::MaxMindDBError::DecodingError(s) => {
+        maxminddb::MaxMindDbError::Io(s) => error!(log.log, "Could not read database {:?}", s),
+        maxminddb::MaxMindDbError::Mmap(s) => warn!(log.log, "Mapping error: {:?}", s),
+        maxminddb::MaxMindDbError::Decoding(s) => {
             warn!(log.log, "Could not decode mapping result: {:?}", s)
-        }
-        maxminddb::MaxMindDBError::AddressNotFoundError(s) => {
-            debug!(log.log, "Could not find address for IP: {:?}", s)
         }
         // include to future proof against cross compile dependency errors
         _ => error!(log.log, "Unknown GeoIP error encountered: {:?}", err),
@@ -199,8 +197,7 @@ fn get_remote(
                     )
                 }
                 Err(err) => Err(HandlerErrorKind::BadRemoteAddrError(format!(
-                    "Unknown address in X-Forwarded-For: {:?}",
-                    err
+                    "Unknown address in X-Forwarded-For: {err:?}"
                 ))
                 .into()),
             }
@@ -235,7 +232,7 @@ fn get_location(
             })
             .unwrap_or_else(|| default_lang.to_owned());
         if let Ok(loc) = remote.parse() {
-            if let Ok(city) = iploc.lookup::<City>(loc).inspect_err(|err| {
+            if let Ok(Some(city)) = iploc.lookup::<City>(loc).inspect_err(|err| {
                 handle_city_err(log, err);
             }) {
                 /*

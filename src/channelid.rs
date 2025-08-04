@@ -28,7 +28,7 @@ impl ChannelID {
 
 impl Default for ChannelID {
     fn default() -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut bytes = [0; CHANNELID_LEN];
         rng.fill_bytes(&mut bytes);
         Self { value: bytes }
@@ -39,7 +39,7 @@ impl fmt::Display for ChannelID {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // calling to_string() causes a stack overflow.
         let as_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(self.value);
-        write!(f, "{}", as_b64)
+        write!(f, "{as_b64}")
     }
 }
 
@@ -63,7 +63,7 @@ mod test {
         let chan = ChannelID::from_str(raw_id).unwrap();
         assert!(chan.as_string() == *raw_id);
         ChannelID::from_str("invalid").expect_err("rejected");
-        let output = format!("{}", chan);
+        let output = format!("{chan}");
         assert_eq!("j6jLPVPeQR6diyrkQinRAQ".to_owned(), output);
     }
 }
