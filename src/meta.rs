@@ -9,6 +9,7 @@ use actix_web::{
 };
 use futures::future::{Ready, ok};
 use ipnet::IpNet;
+use maxminddb::geoip2::Names;
 use maxminddb::{self, MaxMindDbError, geoip2::City};
 use serde::{self, Serialize};
 use slog::{debug, error, info, warn};
@@ -60,28 +61,45 @@ fn preferred_languages(alheader: String, default: &str) -> Vec<String> {
     langs
 }
 
+const LANGUAGES: [&str; 7] = ["en", "fr", "ge", "jp", "pt-BR", "ru", "zh-CN"];
+
+fn get_name_for_language<'a>(lang: &str, names: &'a Names) -> Option<&'a str> {
+    return match lang.to_lowercase().as_str() {
+        "en" => names.english,
+        "fr" => names.french,
+        "ge" => names.german,
+        "jp" => names.japanese,
+        "pt-br" => names.brazilian_portuguese,
+        "ru" => names.russian,
+        "zh-cn" => names.simplified_chinese,
+        _ => None,
+    };
+}
+
 // Return the element that most closely matches the preferred language.
 // This rounds up from the dialect if possible.
-fn get_preferred_language_element(
-    langs: &[String],
-    elements: BTreeMap<&str, &str>,
-) -> Option<String> {
+fn get_preferred_language_element(langs: &[String], names: Names) -> Option<String> {
     for lang in langs {
-        // It's a wildcard, so just return the first possible choice.
+        // It's a wildcard, so just return the first possible choices
         if lang == "*" || lang == "-" {
-            return elements.values().next().map(|s| (*s).to_owned());
-        }
-        if elements.contains_key(lang.as_str()) {
-            if let Some(element) = elements.get(lang.as_str()) {
-                return Some(element.to_string());
-            }
-        }
-        if lang.contains('-') {
-            let (lang, _) = lang.split_at(2);
-            if elements.contains_key(lang) {
-                if let Some(element) = elements.get(lang) {
-                    return Some(element.to_string());
+            for lang in LANGUAGES {
+                if let Some(name) = get_name_for_language(lang, &names) {
+                    return Some(name.to_owned());
                 }
+            }
+            return None;
+        }
+        // Try to match against the known languages maxmind supports.
+        if let Some(name) = get_name_for_language(lang, &names) {
+            return Some(name.to_owned());
+        }
+        // if the language contains a "-" and is not one of the explicitly defined languages we handle,
+        // use the root language.
+        if lang.contains("-") {
+            if let Some(name) =
+                get_name_for_language(lang.split("-").take(1).next().unwrap_or("-"), &names)
+            {
+                return Some(name.to_owned());
             }
         }
     }
@@ -91,14 +109,18 @@ fn get_preferred_language_element(
 #[allow(unreachable_patterns)]
 fn handle_city_err(log: &logging::MozLogger, err: &MaxMindDbError) {
     match err {
-        maxminddb::MaxMindDbError::InvalidDatabase(s) => {
-            error!(log.log, "Invalid GeoIP database! {:?}", s);
+        maxminddb::MaxMindDbError::InvalidDatabase { message, offset: _ } => {
+            error!(log.log, "Invalid GeoIP database! {:?}", message);
             ::std::process::exit(-1);
         }
         maxminddb::MaxMindDbError::Io(s) => error!(log.log, "Could not read database {:?}", s),
         maxminddb::MaxMindDbError::Mmap(s) => warn!(log.log, "Mapping error: {:?}", s),
-        maxminddb::MaxMindDbError::Decoding(s) => {
-            warn!(log.log, "Could not decode mapping result: {:?}", s)
+        maxminddb::MaxMindDbError::Decoding {
+            message,
+            offset: _,
+            path: _,
+        } => {
+            warn!(log.log, "Could not decode mapping result: {:?}", message)
         }
         // include to future proof against cross compile dependency errors
         _ => error!(log.log, "Unknown GeoIP error encountered: {:?}", err),
@@ -232,58 +254,21 @@ fn get_location(
             })
             .unwrap_or_else(|| default_lang.to_owned());
         if let Ok(loc) = remote.parse() {
-            if let Ok(Some(city)) = iploc.lookup::<City>(loc).inspect_err(|err| {
+            if let Ok(result) = iploc.lookup(loc).inspect_err(|err| {
                 handle_city_err(log, err);
             }) {
-                /*
-                    The structure of the returned maxminddb record is:
-                    City:maxminddb::geoip::model::City {
-                        city: Some(City{
-                            geoname_id: Some(#),
-                            names: Some({"lang": "name", ...})
-                            }),
-                        continent: Some(Continent{
-                            geoname_id: Some(#),
-                            names: Some({...})
-                            }),
-                        country: Some(Country{
-                            geoname_id: Some(#),
-                            names: Some({...})
-                            }),
-                        location: Some(Location{
-                            latitude: Some(#.#),
-                            longitude: Some(#.#),
-                            metro_code: Some(#),
-                            time_zone: Some(".."),
-                            }),
-                        postal: Some(Postal {
-                            code: Some("..")
-                            }),
-                        registered_country: Some(Country {
-                            geoname_id: Some(#),
-                            iso_code: Some(".."),
-                            names: Some({"lang": "name", ...})
-                            }),
-                        represented_country: None,
-                        subdivisions: Some([Subdivision {
-                            geoname_id: Some(#),
-                            iso_code: Some(".."),
-                            names: Some({"lang": "name", ...})
-                            }]),
-                        traits: None }
-                    }
-                */
-                if let Some(names) = city.city.and_then(|c| c.names) {
-                    sender.city = get_preferred_language_element(langs, names);
-                }
-                if let Some(names) = city.country.and_then(|c| c.names) {
-                    sender.country = get_preferred_language_element(langs, names);
-                }
-                // because consistency is overrated.
-                if let Some(subdivisions) = city.subdivisions {
-                    if let Some(subdivision) = subdivisions.first() {
-                        if let Some(names) = subdivision.clone().names {
-                            sender.region = get_preferred_language_element(langs, names);
+                if let Ok(Some(city)) = result
+                    .decode::<City>()
+                    .inspect_err(|err| handle_city_err(log, err))
+                {
+                    sender.city = get_preferred_language_element(langs, city.city.names);
+                    sender.country = get_preferred_language_element(langs, city.country.names);
+                    // because consistency is overrated.
+                    if !city.subdivisions.is_empty() {
+                        let subdivisions = city.subdivisions;
+                        if let Some(subdivision) = subdivisions.first() {
+                            sender.region =
+                                get_preferred_language_element(langs, subdivision.clone().names);
                         }
                     }
                 }
@@ -404,7 +389,6 @@ impl From<SenderData> for Option<HashMap<String, String>> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::collections::BTreeMap;
 
     use actix_web::http;
 
@@ -441,11 +425,13 @@ mod test {
         let bad_lang = vec!["fu".to_owned()];
         // Include the "*" so we can return any language.
         let any_lang = vec!["fu".to_owned(), "*".to_owned(), "en".to_owned()];
-        let mut elements = BTreeMap::new();
-        elements.insert("de", "Kalifornien");
-        elements.insert("en", "California");
-        elements.insert("fr", "Californie");
-        elements.insert("ja", "カリフォルニア州");
+        let elements = Names {
+            german: Some("Kalifornien"),
+            english: Some("California"),
+            french: Some("Californie"),
+            japanese: Some("カリフォルニア州"),
+            ..Default::default()
+        };
         assert_eq!(
             Some("California".to_owned()),
             get_preferred_language_element(&langs, elements.clone())

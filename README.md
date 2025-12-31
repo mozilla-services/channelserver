@@ -34,7 +34,7 @@ This product includes GeoLite2 data created by MaxMind, available from
 
 This will require a [maxmind GeoIP](https://dev.maxmind.com/geoip/geoip2/geolite2/) lookup database. This presumes that
 the database will be in `mmdb/latest/GeoLite2-City.mmdb`. Use the
-`mmdb_loc` to specify a different path (*Note:* if running in the debugger,
+`mmdb_loc` to specify a different path (_Note:_ if running in the debugger,
 you may need to create a symlink under `target/debug`.)
 
 ## Compile and run
@@ -52,7 +52,10 @@ When connecting to the server as a new session, the first response message conta
 e.g. for a connection to `wss://example.com/v1/ws/`
 
 ```json
-{"channelid":"IZ5B8Wj2qR1NlsNbSXQ2Fg","link":"/v1/ws/IZ5B8Wj2qR1NlsNbSXQ2Fg"}
+{
+  "channelid": "IZ5B8Wj2qR1NlsNbSXQ2Fg",
+  "link": "/v1/ws/IZ5B8Wj2qR1NlsNbSXQ2Fg"
+}
 ```
 
 Additional connections can be made to the URI specified in `link`.
@@ -62,7 +65,15 @@ Messages sent are expected to be URL Safe base64 encoded blocks and are delivere
 e.g.
 
 ```json
-{"message":"aBc12e....","sender":{"city":"Mountain View","country":"USA","region":"California","remote":"10.0.0.1", }}
+{
+  "message": "aBc12e....",
+  "sender": {
+    "city": "Mountain View",
+    "country": "USA",
+    "region": "California",
+    "remote": "10.0.0.1"
+  }
+}
 ```
 
 This will attempt to localize the geolocation data based on the preferred `Accept-Languages:` HTTP header. If no header is provided, results are unspecified (although probably in German). If an aspect of the location cannot be determined, it is not included in the output.
@@ -73,9 +84,9 @@ There are several limitations put in place and controlled by the following optio
 
 `conn_lifespan` (env: **PAIR_CONN_LIFESPAN**) - Limit the max lifespan of a give channel to this many seconds. The clock starts when the channel is first created. (default: 300)
 
-`client_timeout` (env: **PAIR_CLIENT_TIMEOUT**) - How often to check to see if a client connection has been closed. This can happen due to any number of reasons, but mostly because the internet hates long lived things. (default: 30)
+`client_timeout` (env: **PAIR_CLIENT_TIMEOUT**) - How often to check to see if a client connection has been closed. This can happen due to any number of reasons, but mostly because the internet hates long lived things. A client must respond before this timeout. (default: 60)
 
-`max_channel_connections` (env: **PAIR_MAX_CHANNEL_CONNECTIONS**) - Max number of connections to a given channel. *NOTE* after the second connection, subsequent connections must be from one of the previously connected IP addresses. (default: 3)
+`max_channel_connections` (env: **PAIR_MAX_CHANNEL_CONNECTIONS**) - Max number of connections to a given channel. _NOTE_ after the second connection, subsequent connections must be from one of the previously connected IP addresses. (default: 3)
 
 Additional settings are described in `src/settings.rs`
 
