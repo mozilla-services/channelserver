@@ -64,7 +64,7 @@ fn preferred_languages(alheader: String, default: &str) -> Vec<String> {
 const LANGUAGES: [&str; 7] = ["en", "fr", "ge", "jp", "pt-BR", "ru", "zh-CN"];
 
 fn get_name_for_language<'a>(lang: &str, names: &'a Names) -> Option<&'a str> {
-    return match lang.to_lowercase().as_str() {
+    match lang.to_lowercase().as_str() {
         "en" => names.english,
         "fr" => names.french,
         "ge" => names.german,
@@ -73,7 +73,7 @@ fn get_name_for_language<'a>(lang: &str, names: &'a Names) -> Option<&'a str> {
         "ru" => names.russian,
         "zh-cn" => names.simplified_chinese,
         _ => None,
-    };
+    }
 }
 
 // Return the element that most closely matches the preferred language.
