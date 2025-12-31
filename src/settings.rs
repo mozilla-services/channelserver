@@ -5,6 +5,15 @@ use serde::{Deserialize, Serialize};
 
 static PREFIX: &str = "PAIR";
 
+/// The following settings can be specified via environment variables using
+/// `PAIR_{uppercase_variable_name}={value}`
+/// e.g. the `client_timeout` can be set using `PAIR_CLIENT_TIMEOUT=60`
+/// In addition, settings can be stored in a file that matches the `RUN_MODE`
+/// environment variable (this defaults to `development`)
+/// e.g. to set the `client_timeout` in the `config/development` configuration file:
+/// ```yaml
+/// client_timeout=60
+/// ```
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Settings {
@@ -12,7 +21,8 @@ pub struct Settings {
     pub port: u16,                    // server port (8000)
     pub max_channel_connections: u8,  // Max connections per channel (10)
     pub conn_lifespan: u64,           // Total connection lifespan in seconds (300)
-    pub client_timeout: u64,          // Client timeout for pong responses (30)
+    pub client_timeout: u64,          // Client timeout for responses (60)
+    pub heartbeat_interval: u64,      // How often do we send heartbeat PINGs in seconds (5)
     pub max_exchanges: u8,            // Max number of messages before channel shutdown (3)
     pub max_data: u64,                // Max amount of data octets to exchange (0 ; unlimited)
     pub debug: bool,                  // In debug mode? (false)
@@ -36,7 +46,8 @@ impl Default for Settings {
             port: 8000,
             max_channel_connections: 3,
             conn_lifespan: 300,
-            client_timeout: 60,       // FXA-12122
+            client_timeout: 60, // FXA-12122
+            heartbeat_interval: 5,
             max_exchanges: 10,
             max_data: 0,
             debug: false,

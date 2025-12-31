@@ -15,8 +15,7 @@ use crate::channelid;
 use crate::logging;
 use crate::meta;
 use crate::server;
-use crate::settings;
-use crate::{CLIENT_TIMEOUT, HEARTBEAT_INTERVAL};
+use crate::settings::{self, Settings};
 
 pub struct WsChannelSessionState {
     pub log: logging::MozLogger,
@@ -89,7 +88,7 @@ impl WsChannelSessionState {
 pub struct WsChannelSession {
     /// unique session id
     pub id: usize,
-    /// Client must send ping at least once per CLIENT_TIMEOUT seconds,
+    /// Client must send ping at least once per `client_timeout` seconds,
     /// otherwise we drop connection.
     pub hb: Instant,
     // max channel lifespan
@@ -106,6 +105,8 @@ pub struct WsChannelSession {
     pub log: logging::MozLogger,
     /// metrics reporting pointer
     pub metrics: Arc<cadence::StatsdClient>,
+    /// initial settings
+    pub settings: Settings,
 }
 
 impl Actor for WsChannelSession {
@@ -273,49 +274,53 @@ impl WsChannelSession {
     ///
     /// also this method checks heartbeats from client
     fn hb(&self, ctx: &mut ws::WebsocketContext<Self>) {
-        ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
-            // check client heartbeats
-            if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
-                // heartbeat timed out
-                info!(
-                    act.log.log,
-                    "Client connected too long";
-                    "session" => &act.id,
-                    "channel" => &act.channel.as_string(),
-                    "remote_ip" => &act.meta.remote,
-                );
+        ctx.run_interval(
+            Duration::from_secs(self.settings.heartbeat_interval),
+            |act, ctx| {
+                // check client heartbeats
+                let client_timeout = Duration::from_secs(act.settings.client_timeout);
+                if Instant::now().duration_since(act.hb) > client_timeout {
+                    // heartbeat timed out
+                    info!(
+                        act.log.log,
+                        "Client connected too long";
+                        "session" => &act.id,
+                        "channel" => &act.channel.as_string(),
+                        "remote_ip" => &act.meta.remote,
+                    );
 
-                // notify server
-                act.addr.do_send(server::Disconnect {
-                    id: act.id,
-                    channel: act.channel,
-                    reason: server::DisconnectReason::Timeout,
-                });
-                act.metrics.incr("conn.expired").ok();
+                    // notify server
+                    act.addr.do_send(server::Disconnect {
+                        id: act.id,
+                        channel: act.channel,
+                        reason: server::DisconnectReason::Timeout,
+                    });
+                    act.metrics.incr("conn.expired").ok();
 
-                // stop actor
-                ctx.stop();
-                return;
-            }
-            if Instant::now().duration_since(act.hb) > act.expiry {
-                info!(
-                    act.log.log,
-                    "Client time-out. Disconnecting";
-                    "session" => &act.id,
-                    "channel" => &act.channel.as_string(),
-                    "remote_ip" => &act.meta.remote,
-                );
-                act.metrics.incr("conn.timeout").ok();
-                act.addr.do_send(server::Disconnect {
-                    id: act.id,
-                    channel: act.channel,
-                    reason: server::DisconnectReason::Timeout,
-                });
-                ctx.stop();
-                return;
-            }
-            // Send the ping.
-            ctx.ping(b"");
-        });
+                    // stop actor
+                    ctx.stop();
+                    return;
+                }
+                if Instant::now().duration_since(act.hb) > act.expiry {
+                    info!(
+                        act.log.log,
+                        "Client time-out. Disconnecting";
+                        "session" => &act.id,
+                        "channel" => &act.channel.as_string(),
+                        "remote_ip" => &act.meta.remote,
+                    );
+                    act.metrics.incr("conn.timeout").ok();
+                    act.addr.do_send(server::Disconnect {
+                        id: act.id,
+                        channel: act.channel,
+                        reason: server::DisconnectReason::Timeout,
+                    });
+                    ctx.stop();
+                    return;
+                }
+                // Send the ping.
+                ctx.ping(b"");
+            },
+        );
     }
 }
