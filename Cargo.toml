@@ -42,10 +42,10 @@ actix-web = "4.10"
 actix-web-actors = "4.3"
 actix-files = "0.6"
 
-reqwest = "0.12"
+reqwest = "0.13"
 openssl = "0.10"
 
-maxminddb = { version = "0.26", features = ["mmap"] }
+maxminddb = { version = "0.27", features = ["mmap"] }
 ipnet = "2.11"
 
 #vuln

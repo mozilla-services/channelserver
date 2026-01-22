@@ -1,11 +1,9 @@
-use std::collections::HashMap;
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Formatter, Result};
 use std::io;
 
 use actix::prelude::{Actor, Context};
 
 use slog::Drain;
-use slog::slog_o;
 use slog_mozlog_json::MozLogJson;
 
 #[derive(Clone, Debug)]
@@ -51,7 +49,7 @@ impl MozLogger {
             .fuse();
         let drain = slog_async::Async::new(json_drain).build().fuse();
         Self {
-            log: slog::Logger::root(drain, slog_o!()).new(slog_o!()),
+            log: slog::Logger::root(drain, slog::o!()).new(slog::o!()),
         }
     }
 
@@ -65,7 +63,7 @@ impl MozLogger {
         let drain = slog_async::Async::new(drain).build().fuse();
 
         Self {
-            log: slog::Logger::root(drain, slog_o!()).new(slog_o!()),
+            log: slog::Logger::root(drain, slog::o!()).new(slog::o!()),
         }
     }
 }
@@ -78,28 +76,4 @@ impl Default for MozLogger {
 
 impl Actor for MozLogger {
     type Context = Context<Self>;
-}
-
-#[derive(Debug)]
-pub struct LogMessage {
-    pub level: ErrorLevel,
-    pub msg: String,
-    pub attributes: Option<HashMap<String, String>>,
-}
-
-impl Display for LogMessage {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        let level = match &self.level {
-            ErrorLevel::Debug => "DEBUG",
-            ErrorLevel::Info => "INFO",
-            ErrorLevel::Warn => "WARN",
-            ErrorLevel::Error => "ERROR",
-            ErrorLevel::Critical => "CRITICAL",
-        };
-        let mut msg = format!("{level}: {}", self.msg);
-        if let Some(ref attributes) = self.attributes {
-            msg = format!("{msg} :: {attributes:?}");
-        }
-        Ok(write!(f, "{msg}")?)
-    }
 }

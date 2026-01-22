@@ -25,11 +25,6 @@ mod settings;
    Which might explain random uses of "chat" appearing in portions of the code.
 */
 
-/// How often heartbeat pings are sent
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
-/// How long before lack of client response causes a timeout
-const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
-
 /// Entry point for our route
 async fn channel_route(
     req: HttpRequest,
@@ -97,6 +92,7 @@ async fn channel_route(
             meta,
             log,
             metrics,
+            settings: state.settings.clone(),
         },
         &req,
         stream,
