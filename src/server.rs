@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use actix::prelude::{Actor, Context, Handler, Message, MessageResult, Recipient};
 use cadence::{CountedExt, StatsdClient};
-use rand::{self, TryRng, rngs::ThreadRng};
+use rand::{self, RngExt, rngs::ThreadRng};
 use serde::Serialize;
 use serde_json::json;
 use slog::{debug, error, trace, warn};
@@ -310,7 +310,7 @@ impl Handler<Connect> for ChannelServer {
     type Result = usize;
 
     fn handle(&mut self, msg: Connect, _ctx: &mut Context<Self>) -> Self::Result {
-        let session_id = self.rng.try_next_u64().unwrap() as usize;
+        let session_id = self.rng.random::<u64>() as usize;
         let remote = &msg.remote.clone().unwrap_or_else(|| "Unknown".to_owned());
         let chan_id = &msg.channel.as_string();
         let new_session = Channel {
