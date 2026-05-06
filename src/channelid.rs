@@ -2,7 +2,7 @@ use std::fmt;
 
 use base64::Engine;
 
-use rand::RngCore;
+use rand::Rng;
 use serde::ser::{Serialize, Serializer};
 
 const CHANNELID_LEN: usize = 16;

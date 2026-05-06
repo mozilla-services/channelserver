@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use actix::prelude::{Actor, Context, Handler, Message, MessageResult, Recipient};
 use cadence::{CountedExt, StatsdClient};
-use rand::{self, Rng, rngs::ThreadRng};
+use rand::{self, RngExt, rngs::ThreadRng};
 use serde::Serialize;
 use serde_json::json;
 use slog::{debug, error, trace, warn};
