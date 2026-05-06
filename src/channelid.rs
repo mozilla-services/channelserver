@@ -2,7 +2,7 @@ use std::fmt;
 
 use base64::Engine;
 
-use rand::TryRng;
+use rand::Rng;
 use serde::ser::{Serialize, Serializer};
 
 const CHANNELID_LEN: usize = 16;
@@ -30,7 +30,7 @@ impl Default for ChannelID {
     fn default() -> Self {
         let mut rng = rand::rng();
         let mut bytes = [0; CHANNELID_LEN];
-        rng.try_fill_bytes(&mut bytes).unwrap();
+        rng.fill_bytes(&mut bytes);
         Self { value: bytes }
     }
 }
