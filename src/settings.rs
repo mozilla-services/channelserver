@@ -17,26 +17,31 @@ static PREFIX: &str = "PAIR";
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Settings {
-    pub hostname: String,             // server hostname (localhost)
-    pub port: u16,                    // server port (8000)
-    pub max_channel_connections: u8,  // Max connections per channel (10)
-    pub conn_lifespan: u64,           // Total connection lifespan in seconds (300)
-    pub client_timeout: u64,          // Client timeout for responses (60)
-    pub heartbeat_interval: u64,      // How often do we send heartbeat PINGs in seconds (5)
-    pub max_exchanges: u8,            // Max number of messages before channel shutdown (3)
-    pub max_data: u64,                // Max amount of data octets to exchange (0 ; unlimited)
-    pub debug: bool,                  // In debug mode? (false)
-    pub verbose: bool,                // Verbose Errors? (false)
-    pub mmdb_loc: String,             // MaxMind database path ("mmdb/latest/GeoLite2-City.mmdb")
-    pub statsd_host: String,          // Metric statsd host (localhost)
-    pub trusted_proxy_list: String,   // comma delimited list of proxy hosts ("")
+    pub hostname: String, // server hostname (localhost)
+    pub port: u16,        // server port (8000)
+    // NOTE: Setting `max_channel_connections` to anything other than 2 can
+    // introduce the ability of parties other than the two trying to
+    // connect. That said, mobile devices can be notoriously unreliable
+    // and may either connect, then immediately drop and attempt to reconnect
+    // which may frustrate users.
+    pub max_channel_connections: u8, // Max connections per channel (2)
+    pub conn_lifespan: u64,          // Total connection lifespan in seconds (300)
+    pub client_timeout: u64,         // Client timeout for responses (60)
+    pub heartbeat_interval: u64,     // How often do we send heartbeat PINGs in seconds (5)
+    pub max_exchanges: u8,           // Max number of messages before channel shutdown (3)
+    pub max_data: u64,               // Max amount of data octets to exchange (0 ; unlimited)
+    pub debug: bool,                 // In debug mode? (false)
+    pub verbose: bool,               // Verbose Errors? (false)
+    pub mmdb_loc: String,            // MaxMind database path ("mmdb/latest/GeoLite2-City.mmdb")
+    pub statsd_host: String,         // Metric statsd host (localhost)
+    pub trusted_proxy_list: String,  // comma delimited list of proxy hosts ("")
     pub ip_reputation_server: String, // IP Reputation server. Leave blank to disable ("")
-    pub iprep_min: u8,                // Minimum IP Reputation (0)
-    pub ip_violation: String,         // Name of the abuse violation
-    pub heartbeat: u64,               // Heartbeat rate in seconds for pings (5)
-    pub human_logs: bool,             // Show "Human readable" logs (false)
-    pub default_lang: String,         // Default language if none presented? (None)
-    pub metric_name: String,          // Optional replacement metric name
+    pub iprep_min: u8,               // Minimum IP Reputation (0)
+    pub ip_violation: String,        // Name of the abuse violation
+    pub heartbeat: u64,              // Heartbeat rate in seconds for pings (5)
+    pub human_logs: bool,            // Show "Human readable" logs (false)
+    pub default_lang: String,        // Default language if none presented? (None)
+    pub metric_name: String,         // Optional replacement metric name
 }
 
 impl Default for Settings {
@@ -44,7 +49,7 @@ impl Default for Settings {
         Self {
             hostname: "0.0.0.0".to_owned(),
             port: 8000,
-            max_channel_connections: 3,
+            max_channel_connections: 2,
             conn_lifespan: 300,
             client_timeout: 60, // FXA-12122
             heartbeat_interval: 5,
