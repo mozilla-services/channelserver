@@ -1,6 +1,6 @@
 # Docker 17.05 or higher required for multi-stage builds
 # RUST_VER
-FROM rust:1.86-bookworm AS builder
+FROM rust:1.88-bookworm AS builder
 ADD . /app
 WORKDIR /app
 # Make sure that this matches in .travis.yml
