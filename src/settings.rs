@@ -25,6 +25,8 @@ pub struct Settings {
     pub heartbeat_interval: u64,      // How often do we send heartbeat PINGs in seconds (5)
     pub max_exchanges: u8,            // Max number of messages before channel shutdown (3)
     pub max_data: u64,                // Max amount of data octets to exchange (0 ; unlimited)
+    pub resume_window: u64,           // Seconds a dropped participant may resume (60 ; 0 disables)
+    pub resume_buffer: u8,            // Max messages held for a dropped participant (10)
     pub debug: bool,                  // In debug mode? (false)
     pub verbose: bool,                // Verbose Errors? (false)
     pub mmdb_loc: String,             // MaxMind database path ("mmdb/latest/GeoLite2-City.mmdb")
@@ -50,6 +52,8 @@ impl Default for Settings {
             heartbeat_interval: 5,
             max_exchanges: 10,
             max_data: 0,
+            resume_window: 60,
+            resume_buffer: 10,
             debug: false,
             verbose: false,
             mmdb_loc: "mmdb/latest/GeoLite2-City.mmdb".to_owned(),

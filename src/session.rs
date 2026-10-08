@@ -17,6 +17,9 @@ use crate::meta;
 use crate::server;
 use crate::settings::{self, Settings};
 
+/// Close code for a channel the server ended on purpose.
+pub const CHANNEL_CLOSED_CODE: u16 = 4000;
+
 pub struct WsChannelSessionState {
     pub log: logging::MozLogger,
     pub metrics: Arc<StatsdClient>,
@@ -97,6 +100,10 @@ pub struct WsChannelSession {
     pub channel: channelid::ChannelID,
     /// is the first time we're connecting?
     pub initial_connection: bool,
+    /// token to resume a dropped place in the channel
+    pub resume: Option<String>,
+    /// the client asked to be held after a drop
+    pub resumable: bool,
     /// peer name
     pub meta: meta::SenderData,
     /// Address wrapper for Channel server
@@ -132,13 +139,22 @@ impl Actor for WsChannelSession {
                 channel: self.channel,
                 initial_connect: self.initial_connection,
                 remote: meta.remote,
+                resume: self.resume.clone(),
+                resumable: self.resumable,
             })
             .into_actor(self)
             .then(|res, act, ctx| {
                 let remote = &act.meta.remote;
                 match res {
                     Ok(session_id) => {
-                        if session_id == 0 {
+                        if session_id == server::CHANNEL_GONE {
+                            // Tells a resuming client the channel is gone, so it stops retrying.
+                            ctx.close(Some(ws::CloseReason {
+                                code: ws::CloseCode::Other(CHANNEL_CLOSED_CODE),
+                                description: None,
+                            }));
+                            ctx.stop()
+                        } else if session_id == 0 {
                             ctx.stop()
                         }
                         let _ = act.metrics.incr("conn.create");
@@ -196,8 +212,14 @@ impl Handler<server::TextMessage> for WsChannelSession {
                     "session" => &self.id,
                     "remote_ip" => &self.meta.remote,
                 );
+                // Tells a resuming client the channel is gone, so it stops retrying.
+                ctx.close(Some(ws::CloseReason {
+                    code: ws::CloseCode::Other(CHANNEL_CLOSED_CODE),
+                    description: None,
+                }));
                 ctx.stop();
             }
+            server::MessageType::Drop => ctx.stop(),
             server::MessageType::Text => ctx.text(msg.1),
         }
     }
@@ -251,7 +273,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChannelSession 
                 self.addr.do_send(server::Disconnect {
                     id: self.id,
                     channel: self.channel,
-                    reason: server::DisconnectReason::None,
+                    reason: server::DisconnectReason::Closed,
                 });
                 debug!(
                     self.log.log,
