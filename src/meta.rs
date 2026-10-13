@@ -95,12 +95,11 @@ fn get_preferred_language_element(langs: &[String], names: Names) -> Option<Stri
         }
         // if the language contains a "-" and is not one of the explicitly defined languages we handle,
         // use the root language.
-        if lang.contains("-") {
-            if let Some(name) =
+        if lang.contains("-")
+            && let Some(name) =
                 get_name_for_language(lang.split("-").take(1).next().unwrap_or("-"), &names)
-            {
-                return Some(name.to_owned());
-            }
+        {
+            return Some(name.to_owned());
         }
     }
     None
@@ -347,15 +346,14 @@ impl SenderData {
         );
         // If there's no sender, try pulling the GCP header.
         // NOTE: This is US/EN only, so localization should come later.
-        if sender.city.is_none() {
-            if let Some(ghead) = headers.get("X-Client-Geo-Location") {
-                if let Ok(loc_str) = ghead.to_str() {
-                    let bits = loc_str.split(',').collect::<Vec<&str>>();
-                    let mut bi = bits.iter();
-                    sender.region = bi.next().map(|s| (*s).to_owned());
-                    sender.city = bi.next().map(|s| (*s).to_owned());
-                }
-            }
+        if sender.city.is_none()
+            && let Some(ghead) = headers.get("X-Client-Geo-Location")
+            && let Ok(loc_str) = ghead.to_str()
+        {
+            let bits = loc_str.split(',').collect::<Vec<&str>>();
+            let mut bi = bits.iter();
+            sender.region = bi.next().map(|s| (*s).to_owned());
+            sender.city = bi.next().map(|s| (*s).to_owned());
         }
         sender
     }

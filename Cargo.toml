@@ -8,7 +8,7 @@ authors = [
     "Donovan Preston <donovanpreston@gmail.com>",
 ]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 
 [dependencies]
 base64 = "0.22"
@@ -38,7 +38,9 @@ serde_json = "1.0"
 
 actix-rt = "2.8"
 actix = "0.13"
-actix-web = "4.13"
+# Default features include http2, whose h2 0.3 dependency has open advisories;
+# the channel server only speaks WebSocket over HTTP/1.1.
+actix-web = { version = "4.13", default-features = false, features = ["macros", "ws"] }
 actix-web-actors = "4.3"
 actix-files = "0.6"
 
