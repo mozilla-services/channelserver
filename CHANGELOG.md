@@ -1,3 +1,13 @@
+<a name="1.6.0"></a>
+## 1.6.0 (2026-10-13)
+
+
+#### Features
+
+*   let a dropped participant resume its channel session (#128) ([4cb7699e](4cb7699e))
+
+
+
 <a name="1.5.0"></a>
 ## 1.5.0 (2026-05-06)
 
