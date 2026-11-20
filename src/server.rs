@@ -120,6 +120,9 @@ pub struct Channel {
     pub dropped_at: Option<Instant>,
     /// Messages for this participant while it is dropped, replayed on resume.
     pub pending: Vec<String>,
+    /// Messages received from this participant. Sent back on resume, so the
+    /// client can resend what it wrote to a socket that was already dead.
+    pub received: usize,
 }
 
 /// Debug only: close the newest participant of a channel, to exercise resume.
@@ -382,6 +385,7 @@ impl Handler<ClientMessage> for ChannelServer {
             .and_then(|p| p.get_mut(&msg.id))
         {
             party.prev_token = None;
+            party.received += 1;
         }
         if self
             .send_message(
@@ -437,6 +441,7 @@ impl Handler<Connect> for ChannelServer {
             prev_token: None,
             dropped_at: None,
             pending: Vec::new(),
+            received: 0,
         };
         debug!(
             self.log.log,
@@ -516,7 +521,8 @@ impl Handler<Connect> for ChannelServer {
             let pending = std::mem::take(&mut party.pending);
             let greeting = json!({ "link": format!("/v1/ws/{}", chan_id),
                                    "channelid": chan_id,
-                                   "resume": &party.resume_token });
+                                   "resume": &party.resume_token,
+                                   "received": party.received });
             group.insert(session_id, party);
             self.sessions.insert(session_id, msg.addr.clone());
             // do_send, as the session mailbox can hold fewer messages than the buffer.
@@ -632,6 +638,7 @@ mod test {
                 prev_token: None,
                 dropped_at: None,
                 pending: Vec::new(),
+                received: 0,
             },
         );
         test_group.insert(
@@ -647,6 +654,7 @@ mod test {
                 prev_token: None,
                 dropped_at: None,
                 pending: Vec::new(),
+                received: 0,
             },
         );
 
@@ -734,6 +742,39 @@ mod test {
             .await
             .unwrap();
         assert_ne!(resumed, 0);
+    }
+
+    #[actix_rt::test]
+    async fn test_resume_reports_messages_received() {
+        let server = test_server();
+        let channel = ChannelID::default();
+        let (id, token) = join(&server, channel).await;
+        server
+            .send(ClientMessage {
+                id,
+                message_type: MessageType::Text,
+                msg: "hello".to_owned(),
+                channel,
+                sender: meta::SenderData::default(),
+            })
+            .await
+            .unwrap();
+        server
+            .send(Disconnect {
+                channel,
+                id,
+                reason: DisconnectReason::None,
+            })
+            .await
+            .unwrap();
+        let sink = Sink::default();
+        server
+            .send(connect(channel, false, Some(token), &sink))
+            .await
+            .unwrap();
+        actix_rt::task::yield_now().await;
+        let greeting: serde_json::Value = serde_json::from_str(&sink.0.lock().unwrap()[0]).unwrap();
+        assert_eq!(greeting["received"], 1);
     }
 
     #[actix_rt::test]
