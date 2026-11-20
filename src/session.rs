@@ -314,7 +314,11 @@ impl WsChannelSession {
                 // cannot resume until the server has seen it drop.
                 let client_timeout =
                     Duration::from_secs(if act.resumable && act.settings.resume_window > 0 {
-                        act.settings.resume_client_timeout
+                        // Never shorter than two heartbeats, or an idle client
+                        // is dropped before its first ping can be answered.
+                        act.settings
+                            .resume_client_timeout
+                            .max(act.settings.heartbeat_interval * 2)
                     } else {
                         act.settings.client_timeout
                     });
