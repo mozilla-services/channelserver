@@ -101,7 +101,8 @@ async fn channel_route(
         .map(|p| p[RESUME_PROTOCOL_PREFIX.len()..].to_owned());
     // Only a client that asks for resume is held after a drop, so legacy
     // clients keep the old behavior. Older servers ignore the flag.
-    let resumable = req.query_string().split('&').any(|kv| kv == "resume=1");
+    // A resume reconnects without the flag, and is by definition a client that can resume.
+    let resumable = resume.is_some() || req.query_string().split('&').any(|kv| kv == "resume=1");
     let session = session::WsChannelSession {
         id: 0,
         hb: Instant::now(),

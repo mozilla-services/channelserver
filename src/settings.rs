@@ -27,6 +27,7 @@ pub struct Settings {
     pub max_data: u64,                // Max amount of data octets to exchange (0 ; unlimited)
     pub resume_window: u64,           // Seconds a dropped participant may resume (60 ; 0 disables)
     pub resume_buffer: u8,            // Max messages held for a dropped participant (10)
+    pub resume_client_timeout: u64,   // Client timeout for a client that can resume (15)
     pub debug: bool,                  // In debug mode? (false)
     pub verbose: bool,                // Verbose Errors? (false)
     pub mmdb_loc: String,             // MaxMind database path ("mmdb/latest/GeoLite2-City.mmdb")
@@ -54,6 +55,9 @@ impl Default for Settings {
             max_data: 0,
             resume_window: 60,
             resume_buffer: 10,
+            // Under the client's 50 s resume window. A drop the server only
+            // notices at `client_timeout` is refused every resume until then.
+            resume_client_timeout: 15,
             debug: false,
             verbose: false,
             mmdb_loc: "mmdb/latest/GeoLite2-City.mmdb".to_owned(),

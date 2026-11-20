@@ -300,7 +300,14 @@ impl WsChannelSession {
             Duration::from_secs(self.settings.heartbeat_interval),
             |act, ctx| {
                 // check client heartbeats
-                let client_timeout = Duration::from_secs(act.settings.client_timeout);
+                // A held client loses nothing by being timed out early, and it
+                // cannot resume until the server has seen it drop.
+                let client_timeout =
+                    Duration::from_secs(if act.resumable && act.settings.resume_window > 0 {
+                        act.settings.resume_client_timeout
+                    } else {
+                        act.settings.client_timeout
+                    });
                 if Instant::now().duration_since(act.hb) > client_timeout {
                     // heartbeat timed out
                     info!(
