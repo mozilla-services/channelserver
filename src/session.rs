@@ -17,6 +17,9 @@ use crate::meta;
 use crate::server;
 use crate::settings::{self, Settings};
 
+/// Sent every heartbeat to a client that asked for it. Never relayed to the peer.
+pub const KEEPALIVE: &str = r#"{"keepalive":true}"#;
+
 /// Close code for a channel the server ended on purpose.
 pub const CHANNEL_CLOSED_CODE: u16 = 4000;
 
@@ -104,6 +107,8 @@ pub struct WsChannelSession {
     pub resume: Option<String>,
     /// the client asked to be held after a drop
     pub resumable: bool,
+    /// the client asked for keepalive messages
+    pub keepalive: bool,
     /// peer name
     pub meta: meta::SenderData,
     /// Address wrapper for Channel server
@@ -124,6 +129,11 @@ impl Actor for WsChannelSession {
     fn started(&mut self, ctx: &mut Self::Context) {
         // we'll start heartbeat process on session start.
         self.hb(ctx);
+        // Tells the client at once that keepalives are coming, so it can time
+        // them from the start instead of after the first heartbeat.
+        if self.keepalive {
+            ctx.text(KEEPALIVE);
+        }
 
         let meta = self.meta.clone();
 
@@ -349,6 +359,9 @@ impl WsChannelSession {
                 }
                 // Send the ping.
                 ctx.ping(b"");
+                if act.keepalive {
+                    ctx.text(KEEPALIVE);
+                }
             },
         );
     }
