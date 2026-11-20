@@ -101,7 +101,11 @@ async fn channel_route(
         .map(|p| p[RESUME_PROTOCOL_PREFIX.len()..].to_owned());
     // Only a client that asks for resume is held after a drop, so legacy
     // clients keep the old behavior. Older servers ignore the flag.
-    let resumable = req.query_string().split('&').any(|kv| kv == "resume=1");
+    // A resume reconnects without the flag, and is by definition a client that can resume.
+    let resumable = resume.is_some() || req.query_string().split('&').any(|kv| kv == "resume=1");
+    // A browser cannot see WebSocket pings, so a client that asks gets a text
+    // message it can time, to notice a connection that died without closing.
+    let keepalive = req.query_string().split('&').any(|kv| kv == "keepalive=1");
     let session = session::WsChannelSession {
         id: 0,
         hb: Instant::now(),
@@ -111,6 +115,7 @@ async fn channel_route(
         initial_connection,
         resume,
         resumable,
+        keepalive,
         meta,
         log,
         metrics,
